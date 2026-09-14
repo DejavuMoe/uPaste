@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,6 +68,61 @@ func (env *testEnv) request(method, path string, headers map[string]string) *htt
 	response := httptest.NewRecorder()
 	env.handler.ServeHTTP(response, request)
 	return response
+}
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	writeDeadlines []time.Time
+}
+
+func (recorder *deadlineRecorder) SetWriteDeadline(value time.Time) error {
+	recorder.writeDeadlines = append(recorder.writeDeadlines, value)
+	return nil
+}
+
+func TestFileResponseDeadlineUnwrapsSecurityAndHEADWriters(t *testing.T) {
+	env := newTestEnv(t)
+	value, _ := env.create(t, "x.txt", "x", nil)
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			response := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			env.handler.ServeHTTP(response, httptest.NewRequest(method, "/f/"+value.ID.String(), nil))
+			if response.Code != http.StatusOK || len(response.writeDeadlines) != 1 || time.Until(response.writeDeadlines[0]) < share.FileTransferDeadline-time.Second {
+				t.Fatalf("deadline/status = %v/%d", response.writeDeadlines, response.Code)
+			}
+			if method == http.MethodHead && response.Body.Len() != 0 {
+				t.Fatal("HEAD had body")
+			}
+		})
+	}
+}
+
+func TestFileDownloadDeadlineReachesRealServerConnection(t *testing.T) {
+	env := newTestEnv(t)
+	value, _ := env.create(t, "x.txt", "x", nil)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := &deadlineListener{Listener: listener, connections: make(chan *deadlineConn, 1)}
+	server := &http.Server{Handler: env.handler, WriteTimeout: 15 * time.Second}
+	go server.Serve(tracked)
+	t.Cleanup(func() { _ = server.Close() })
+	response, err := http.Get("http://" + listener.Addr().String() + "/f/" + value.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	if _, err := io.ReadAll(response.Body); err != nil {
+		t.Fatal(err)
+	}
+	connection := <-tracked.connections
+	if !connection.hasWriteDeadlineAfter(time.Now().Add(9 * time.Minute)) {
+		t.Fatal("File download deadline did not reach real connection")
+	}
 }
 
 func TestFileDelivery(t *testing.T) {
@@ -200,4 +257,43 @@ func assertSecurity(t *testing.T, response *httptest.ResponseRecorder) {
 		t.Error("CORS header set")
 	}
 }
+
+type deadlineListener struct {
+	net.Listener
+	connections chan *deadlineConn
+}
+
+func (listener *deadlineListener) Accept() (net.Conn, error) {
+	connection, err := listener.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	tracked := &deadlineConn{Conn: connection}
+	listener.connections <- tracked
+	return tracked, nil
+}
+
+type deadlineConn struct {
+	net.Conn
+	mu             sync.Mutex
+	writeDeadlines []time.Time
+}
+
+func (connection *deadlineConn) SetWriteDeadline(value time.Time) error {
+	connection.mu.Lock()
+	connection.writeDeadlines = append(connection.writeDeadlines, value)
+	connection.mu.Unlock()
+	return connection.Conn.SetWriteDeadline(value)
+}
+func (connection *deadlineConn) hasWriteDeadlineAfter(value time.Time) bool {
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	for _, deadline := range connection.writeDeadlines {
+		if deadline.After(value) {
+			return true
+		}
+	}
+	return false
+}
+
 func sha256Hex(value []byte) string { return fmt.Sprintf("%x", sha256.Sum256(value)) }

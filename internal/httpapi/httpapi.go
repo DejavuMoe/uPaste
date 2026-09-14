@@ -335,6 +335,18 @@ type fileMetadataRequest struct {
 }
 
 func (api *API) createFile(w http.ResponseWriter, r *http.Request) {
+	controller := http.NewResponseController(w)
+	deadline := time.Now().Add(share.FileTransferDeadline)
+	if err := controller.SetReadDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		api.log.Error("request failed", "operation", "extend File upload read deadline", "error", err)
+		api.writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
+	if err := controller.SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		api.log.Error("request failed", "operation", "extend File upload write deadline", "error", err)
+		api.writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+		return
+	}
 	if r.ContentLength > maxFileWireBytes {
 		api.writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
 		return

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,6 +54,63 @@ func multipartRequest(t *testing.T, metadata string, filename string, content []
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/shares", &body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	return request
+}
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	readDeadlines  []time.Time
+	writeDeadlines []time.Time
+}
+
+func (recorder *deadlineRecorder) SetReadDeadline(value time.Time) error {
+	recorder.readDeadlines = append(recorder.readDeadlines, value)
+	return nil
+}
+func (recorder *deadlineRecorder) SetWriteDeadline(value time.Time) error {
+	recorder.writeDeadlines = append(recorder.writeDeadlines, value)
+	return nil
+}
+
+func TestFileUploadExtendsOnlyMultipartDeadline(t *testing.T) {
+	env := newAPITestEnv(t)
+	fileResponse := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	env.handler.ServeHTTP(fileResponse, multipartRequest(t, `{"payload_kind":"FILE","privacy_mode":"STANDARD","expires_at":null}`, "x.txt", []byte("x"), false))
+	if fileResponse.Code != http.StatusCreated || len(fileResponse.readDeadlines) != 1 || len(fileResponse.writeDeadlines) != 1 || time.Until(fileResponse.readDeadlines[0]) < share.FileTransferDeadline-time.Second {
+		t.Fatalf("File deadline/status = %v/%d", fileResponse.readDeadlines, fileResponse.Code)
+	}
+	jsonResponse := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/shares", strings.NewReader(`{"payload_kind":"TEXT","privacy_mode":"STANDARD","text":{"format":"PLAIN","content":"x"},"expires_at":null}`))
+	request.Header.Set("Content-Type", "application/json")
+	env.handler.ServeHTTP(jsonResponse, request)
+	if jsonResponse.Code != http.StatusCreated || len(jsonResponse.readDeadlines) != 0 || len(jsonResponse.writeDeadlines) != 0 {
+		t.Fatalf("JSON deadline/status = %v/%d", jsonResponse.readDeadlines, jsonResponse.Code)
+	}
+}
+
+func TestFileUploadDeadlineReachesRealServerConnection(t *testing.T) {
+	env := newAPITestEnv(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := &deadlineListener{Listener: listener, connections: make(chan *deadlineConn, 1)}
+	server := &http.Server{Handler: env.handler, ReadTimeout: 15 * time.Second}
+	go server.Serve(tracked)
+	t.Cleanup(func() { _ = server.Close() })
+	request := multipartRequest(t, `{"payload_kind":"FILE","privacy_mode":"STANDARD","expires_at":null}`, "x.txt", []byte("x"), false)
+	request.URL.Scheme, request.URL.Host, request.RequestURI = "http", listener.Addr().String(), ""
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	connection := <-tracked.connections
+	if !connection.hasReadDeadlineAfter(time.Now().Add(9*time.Minute)) || !connection.hasWriteDeadlineAfter(time.Now().Add(9*time.Minute)) {
+		t.Fatal("File upload deadlines did not reach real connection")
+	}
 }
 
 func TestCreateFileShare(t *testing.T) {
@@ -308,6 +367,60 @@ func TestFileUploadWireLimit(t *testing.T) {
 	request.ContentLength = maxFileWireBytes + 1
 	request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
 	assertError(t, env.serve(request), http.StatusRequestEntityTooLarge, "request_too_large")
+}
+
+type deadlineListener struct {
+	net.Listener
+	connections chan *deadlineConn
+}
+
+func (listener *deadlineListener) Accept() (net.Conn, error) {
+	connection, err := listener.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	tracked := &deadlineConn{Conn: connection}
+	listener.connections <- tracked
+	return tracked, nil
+}
+
+type deadlineConn struct {
+	net.Conn
+	mu                            sync.Mutex
+	readDeadlines, writeDeadlines []time.Time
+}
+
+func (connection *deadlineConn) SetReadDeadline(value time.Time) error {
+	connection.mu.Lock()
+	connection.readDeadlines = append(connection.readDeadlines, value)
+	connection.mu.Unlock()
+	return connection.Conn.SetReadDeadline(value)
+}
+func (connection *deadlineConn) SetWriteDeadline(value time.Time) error {
+	connection.mu.Lock()
+	connection.writeDeadlines = append(connection.writeDeadlines, value)
+	connection.mu.Unlock()
+	return connection.Conn.SetWriteDeadline(value)
+}
+func (connection *deadlineConn) hasReadDeadlineAfter(value time.Time) bool {
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	for _, deadline := range connection.readDeadlines {
+		if deadline.After(value) {
+			return true
+		}
+	}
+	return false
+}
+func (connection *deadlineConn) hasWriteDeadlineAfter(value time.Time) bool {
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	for _, deadline := range connection.writeDeadlines {
+		if deadline.After(value) {
+			return true
+		}
+	}
+	return false
 }
 
 type zeroReader struct{}

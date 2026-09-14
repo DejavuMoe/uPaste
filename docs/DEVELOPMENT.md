@@ -45,6 +45,10 @@ UPASTE_DATA_DIR=/tmp/upaste-dev make dev-backend
 
 The loopback default is intentional. Binding externally requires explicit operator configuration and an appropriate trusted reverse proxy/firewall.
 
+## Transfer deadlines
+
+Servers keep 5-second header reads, 15-second ordinary read/write deadlines, 60-second idle connections, and 32 KiB headers. A valid multipart File create extends that request body's read deadline and eventual response write deadline to 10 minutes before multipart parsing; File GET/HEAD extends only that response write deadline to 10 minutes before delivery. This bounded exception is needed for the 64 MiB transfer limit and does not add rate limiting or make ordinary JSON slow-body requests long-lived.
+
 ## Database and migrations
 
 `internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; version 3 adds `encrypted_text_payloads`; version 4 adds `file_payloads` and File invariant triggers. Migrations 0001–0003 remain immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.

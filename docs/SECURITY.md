@@ -15,7 +15,7 @@ These are mandatory design constraints. Later implementation must fail closed wh
 11. `/raw/{id}` is always inert plain text; Files are served only from the separate file origin as attachments. with `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff`, and a restrictive Content Security Policy.
 12. Uploaded untrusted files are served from a separate web origin and listener from the application/API. Host-header checks alone are insufficient.
 13. Active uploaded formats such as HTML, SVG, XML, and JavaScript never execute with application-origin authority.
-14. File delivery defaults to attachment unless the detected MIME type is explicitly classified safe for inline delivery.
+14. Every File delivery is an attachment regardless of detected MIME type.
 15. Filename extensions and browser-declared MIME types are not authoritative.
 16. Logs never contain request bodies, Authorization values, passwords, owner tokens, encryption keys, or plaintext encrypted-share content.
 17. No authentication cookies are planned for the initial anonymous capability model.
@@ -33,7 +33,7 @@ Phase 2 uses these primitives for owner-authorized PATCH/DELETE. Only the creati
 
 PATCH verifies the active Share and capability before body processing, then repeats existence, expiration, and capability checks inside the update transaction. This prevents unauthorized body-validation feedback without treating the preliminary check as mutation authorization.
 
-Standard File upload is bounded to 64 MiB through streamed staging; the full multipart wire body is capped at 66 MiB. Original filenames are sanitized metadata, never paths. The server sniffs at most 512 bytes with `http.DetectContentType`, computes SHA-256 while streaming, and every delivery is `Content-Disposition: attachment` regardless of MIME. No malware scanning is performed.
+Standard File upload is bounded to 64 MiB through streamed staging; the full multipart wire body is capped at 66 MiB. Valid multipart upload body reads and eventual responses, plus File GET/HEAD writes, use bounded 10-minute per-operation deadlines; ordinary API requests retain the server's 15-second deadline. Original filenames are sanitized metadata, never paths. The server sniffs at most 512 bytes with `http.DetectContentType`, computes SHA-256 while streaming, and every delivery is `Content-Disposition: attachment` regardless of MIME. No malware scanning is performed.
 
 File URLs use explicitly configured `file-origin`; Host and forwarded headers are never trusted. The file listener exposes only `/f/{id}` and all responses carry no-store, nosniff, no-referrer, frame denial, and sandbox CSP. The application listener never serves File bytes.
 
@@ -45,7 +45,7 @@ Encrypted Text protocol `UPASTE_AES_GCM_V1` is frozen by ADR 0010: browser Web C
 
 The fragment is a confidentiality capability, not management authority. The independent owner token authorizes PATCH/DELETE but cannot decrypt. Fragment exposure through complete-link sharing, browser history/sync, clipboard, screenshots, extensions, or page JavaScript compromises confidentiality. Phase 3 stores no fragment in localStorage, sessionStorage, IndexedDB, or cookies.
 
-Local objects use server-generated keys and restrictive `0700` object directories/`0600` files. Filesystem finalization and SQLite commit are compensated on ordinary failure so committed Shares do not intentionally point at missing objects. A crash after finalization before DB commit or a post-delete cleanup failure can leave an unreachable orphan; reconciliation is future work. Missing objects for live metadata return 500.
+Local objects use server-generated keys and restrictive `0700` object directories/`0600` files. Filesystem finalization and SQLite commit are compensated on ordinary failure, including a finalization error after publication, so committed Shares do not intentionally point at missing objects. A failed compensating delete is reported internally but remains a future reconciliation orphan. A crash after finalization before DB commit or a post-delete cleanup failure can also leave an unreachable orphan; reconciliation is future work. Missing objects for live metadata return 500.
 
 Zero knowledge covers an honest server running the reviewed protocol: it does not receive plaintext or key. It does not protect against malicious modified JavaScript from the host, a compromised browser or extension, stolen fragments, traffic metadata, IP/timing/ciphertext-size observation, server-controlled expiration, or owner-capability misuse. Encrypted files require a separate design covering streaming, bounded memory, authenticated chunking, resumability, integrity, and key handling.
 

@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Phase 4 implementation
+## Current Phase 4.1 implementation
 
 uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check. Phase 4 adds Standard File multipart create/read/owner-expiration-update/delete behavior. Files are delivered only from a second listener; Standard raw remains available while Encrypted raw returns 409. `web/` remains an independently built shell without product UI, plus a React-independent Web Crypto protocol module.
 
@@ -12,12 +12,14 @@ The implemented internal packages are deliberately limited:
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
 - `share`: concrete transactional Standard/Encrypted Text and Standard File behavior using an injected clock.
 - `httpapi`: strict Go JSON v2 and multipart creation, bearer authorization, and application API responses.
-- `fileapi`: isolated attachment-only File listener.
-- `objectstore`: narrow local staging/commit/open/delete boundary.
+- `fileapi`: isolated attachment-only File listener with a bounded response deadline.
+- `objectstore`: `Store` staging/commit/open/delete boundary; `Local` is the current implementation.
 
 There is no generic repository layer, cleanup/reconciliation worker, rate limiting, encrypted File behavior, encrypted product UI, or embedded frontend yet.
 
 The browser module `web/src/crypto/encryptedText.ts` owns key generation, AES-256-GCM encryption/decryption, the binary plaintext envelope, and strict key-fragment/base64url handling. The HTTP server never decrypts and has no production AES key handling. API responses model Standard, Encrypted, and File payloads explicitly so irrelevant zero-valued fields are never serialized.
+
+Ordinary application requests retain 15-second read/write deadlines. Valid bounded File multipart uploads extend their body read and eventual response write deadlines to 10 minutes; File GET/HEAD extend only their response write deadline to 10 minutes. Header reads remain 5 seconds, idle connections 60 seconds, and headers 32 KiB.
 
 The app listener defaults to `127.0.0.1:8080`; the independent file listener defaults to `127.0.0.1:8081`; their equal-address configuration is rejected. Configured `file-origin`, default `http://127.0.0.1:8081`, is the only public File URL base. File delivery never branches on Host or forwarded headers.
 
@@ -49,9 +51,9 @@ The metadata schema contains `id`, `payload_kind`, `privacy_mode`, `owner_token_
 
 ## Approved future architecture
 
-The deployable shape remains one Go binary, one SQLite database, and one data directory. Payload objects will initially use the local filesystem; an interface is deferred until the expected S3-compatible implementation creates a real second boundary. The production frontend bundle will eventually be embedded in the executable.
+The deployable shape remains one Go binary, one SQLite database, one local object store, and two listeners. A future S3-compatible `Store` implementation may replace Local storage when that boundary is needed. The production frontend bundle may later be embedded in the executable.
 
-The same binary may later expose separate loopback listeners for the application/API and untrusted file origin, commonly `127.0.0.1:8080` and `127.0.0.1:8081`. Reverse-proxy routing must provide separate origins and must not rely only on `Host`. TLS normally terminates at a trusted reverse proxy.
+The same binary already exposes separate loopback listeners for the application/API and untrusted file origin, commonly `127.0.0.1:8080` and `127.0.0.1:8081`. Reverse-proxy routing must provide separate origins and must not rely only on `Host`. TLS normally terminates at a trusted reverse proxy.
 
 ## Not implemented in Phase 4
 

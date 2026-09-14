@@ -22,6 +22,7 @@ const (
 	MinEncryptedCipherBytes = 19
 	MaxEncryptedCipherBytes = MaxTextBytes + 2 + 16
 	MaxFileBytes            = 64 << 20
+	FileTransferDeadline    = 10 * time.Minute
 )
 
 var (
@@ -126,7 +127,10 @@ func (s *Service) StageFile(ctx context.Context, source io.Reader) (objectstore.
 	return s.store.Stage(ctx, source, MaxFileBytes)
 }
 
-func (s *Service) CreateFile(ctx context.Context, filename string, staged objectstore.Staged, expiration *time.Time) (Share, capability.OwnerToken, error) {
+func (s *Service) CreateFile(ctx context.Context, filename string, staged objectstore.Staged, expiration *time.Time) (value Share, token capability.OwnerToken, err error) {
+	if s.store == nil || staged == nil {
+		return Share{}, capability.OwnerToken{}, errors.New("object storage is unavailable")
+	}
 	defer staged.Abort()
 	now := s.serverNow()
 	expiresAt, err := normalizeExpiration(expiration, now)
@@ -137,7 +141,7 @@ func (s *Service) CreateFile(ctx context.Context, filename string, staged object
 	if err != nil {
 		return Share{}, capability.OwnerToken{}, err
 	}
-	token, err := capability.GenerateOwnerToken()
+	token, err = capability.GenerateOwnerToken()
 	if err != nil {
 		return Share{}, capability.OwnerToken{}, err
 	}
@@ -145,6 +149,14 @@ func (s *Service) CreateFile(ctx context.Context, filename string, staged object
 		StorageKey: staged.Key(), Filename: filename, Size: staged.Size(),
 		MediaType: http.DetectContentType(staged.Sniff()), SHA256: staged.SHA256(),
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			if cleanupErr := s.store.Delete(file.StorageKey); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("remove uncommitted File object: %w", cleanupErr))
+			}
+		}
+	}()
 	created := Share{
 		ID: id, PayloadKind: domain.PayloadFile, PrivacyMode: domain.PrivacyStandard,
 		File: file, CreatedAt: now, UpdatedAt: now, ExpiresAt: expiresAt,
@@ -160,12 +172,6 @@ func (s *Service) CreateFile(ctx context.Context, filename string, staged object
 	if err := staged.Commit(); err != nil {
 		return Share{}, capability.OwnerToken{}, fmt.Errorf("finalize File object: %w", err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = s.store.Delete(file.StorageKey)
-		}
-	}()
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO file_payloads (share_id, storage_key, original_filename, size_bytes, detected_media_type, content_sha256)
 		VALUES (?, ?, ?, ?, ?, ?)

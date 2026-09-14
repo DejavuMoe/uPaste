@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DejavuMoe/uPaste/internal/capability"
 	"github.com/DejavuMoe/uPaste/internal/share"
@@ -39,6 +40,8 @@ type fileResponseWriter struct{ http.ResponseWriter }
 type headResponseWriter struct{ http.ResponseWriter }
 
 func (writer headResponseWriter) Write(value []byte) (int, error) { return len(value), nil }
+func (writer headResponseWriter) Unwrap() http.ResponseWriter     { return writer.ResponseWriter }
+func (writer *fileResponseWriter) Unwrap() http.ResponseWriter    { return writer.ResponseWriter }
 
 func (writer *fileResponseWriter) WriteHeader(status int) {
 	writer.apply()
@@ -87,6 +90,11 @@ func (api *API) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer object.Close()
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(share.FileTransferDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		api.log.Error("request failed", "operation", "extend File download deadline", "share_id", id.String(), "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", value.File.MediaType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": value.File.Filename}))
 	w.Header().Set("ETag", `"`+hex.EncodeToString(value.File.SHA256[:])+`"`)
