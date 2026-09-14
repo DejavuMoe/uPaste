@@ -2,13 +2,17 @@ package share
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/DejavuMoe/uPaste/internal/capability"
 	"github.com/DejavuMoe/uPaste/internal/domain"
+	"github.com/DejavuMoe/uPaste/internal/objectstore"
 )
 
 const (
@@ -17,6 +21,7 @@ const (
 	EncryptedNonceBytes     = 12
 	MinEncryptedCipherBytes = 19
 	MaxEncryptedCipherBytes = MaxTextBytes + 2 + 16
+	MaxFileBytes            = 64 << 20
 )
 
 var (
@@ -30,6 +35,14 @@ var (
 	ErrEmptyPatch           = errors.New("patch must change text or expiration")
 )
 
+type CleanupError struct {
+	StorageKey string
+	Err        error
+}
+
+func (err *CleanupError) Error() string { return "remove deleted File object: " + err.Err.Error() }
+func (err *CleanupError) Unwrap() error { return err.Err }
+
 type Text struct {
 	Format  domain.TextFormat
 	Content string
@@ -41,12 +54,21 @@ type EncryptedText struct {
 	Ciphertext []byte
 }
 
+type File struct {
+	StorageKey string
+	Filename   string
+	Size       int64
+	MediaType  string
+	SHA256     [sha256.Size]byte
+}
+
 type Share struct {
 	ID            capability.ShareID
 	PayloadKind   domain.PayloadKind
 	PrivacyMode   domain.PrivacyMode
 	Text          *Text
 	EncryptedText *EncryptedText
+	File          *File
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	ExpiresAt     *time.Time
@@ -70,12 +92,17 @@ type Patch struct {
 }
 
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
+	db    *sql.DB
+	store objectstore.Store
+	now   func() time.Time
 }
 
 func New(db *sql.DB, now func() time.Time) *Service {
 	return &Service{db: db, now: now}
+}
+
+func NewWithStore(db *sql.DB, store objectstore.Store, now func() time.Time) *Service {
+	return &Service{db: db, store: store, now: now}
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Share, capability.OwnerToken, error) {
@@ -90,6 +117,81 @@ func (s *Service) CreateEncrypted(ctx context.Context, input EncryptedCreateInpu
 		return Share{}, capability.OwnerToken{}, err
 	}
 	return s.create(ctx, domain.PrivacyEncrypted, nil, &input.EncryptedText, input.ExpiresAt)
+}
+
+func (s *Service) StageFile(ctx context.Context, source io.Reader) (objectstore.Staged, error) {
+	if s.store == nil {
+		return nil, errors.New("object storage is unavailable")
+	}
+	return s.store.Stage(ctx, source, MaxFileBytes)
+}
+
+func (s *Service) CreateFile(ctx context.Context, filename string, staged objectstore.Staged, expiration *time.Time) (Share, capability.OwnerToken, error) {
+	defer staged.Abort()
+	now := s.serverNow()
+	expiresAt, err := normalizeExpiration(expiration, now)
+	if err != nil {
+		return Share{}, capability.OwnerToken{}, err
+	}
+	id, err := capability.GenerateShareID()
+	if err != nil {
+		return Share{}, capability.OwnerToken{}, err
+	}
+	token, err := capability.GenerateOwnerToken()
+	if err != nil {
+		return Share{}, capability.OwnerToken{}, err
+	}
+	file := &File{
+		StorageKey: staged.Key(), Filename: filename, Size: staged.Size(),
+		MediaType: http.DetectContentType(staged.Sniff()), SHA256: staged.SHA256(),
+	}
+	created := Share{
+		ID: id, PayloadKind: domain.PayloadFile, PrivacyMode: domain.PrivacyStandard,
+		File: file, CreatedAt: now, UpdatedAt: now, ExpiresAt: expiresAt,
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Share{}, capability.OwnerToken{}, fmt.Errorf("begin File Share creation: %w", err)
+	}
+	defer tx.Rollback()
+	if err := insertMetadata(ctx, tx, created, token.Verifier()); err != nil {
+		return Share{}, capability.OwnerToken{}, err
+	}
+	if err := staged.Commit(); err != nil {
+		return Share{}, capability.OwnerToken{}, fmt.Errorf("finalize File object: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = s.store.Delete(file.StorageKey)
+		}
+	}()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO file_payloads (share_id, storage_key, original_filename, size_bytes, detected_media_type, content_sha256)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, id.String(), file.StorageKey, file.Filename, file.Size, file.MediaType, file.SHA256[:]); err != nil {
+		return Share{}, capability.OwnerToken{}, fmt.Errorf("insert File payload: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Share{}, capability.OwnerToken{}, fmt.Errorf("commit File Share creation: %w", err)
+	}
+	committed = true
+	return created, token, nil
+}
+
+func (s *Service) OpenFile(ctx context.Context, id capability.ShareID) (Share, objectstore.ReadSeekCloser, error) {
+	value, err := s.Get(ctx, id)
+	if err != nil {
+		return Share{}, nil, err
+	}
+	if value.File == nil || s.store == nil {
+		return Share{}, nil, ErrNotFound
+	}
+	object, err := s.store.Open(value.File.StorageKey)
+	if err != nil {
+		return Share{}, nil, fmt.Errorf("open File object: %w", err)
+	}
+	return value, object, nil
 }
 
 func (s *Service) create(ctx context.Context, privacy domain.PrivacyMode, text *Text, encrypted *EncryptedText, expiration *time.Time) (Share, capability.OwnerToken, error) {
@@ -121,15 +223,15 @@ func (s *Service) Get(ctx context.Context, id capability.ShareID) (Share, error)
 	return loadActive(ctx, s.db, id, s.serverNow())
 }
 
-func (s *Service) AuthorizeOwner(ctx context.Context, id capability.ShareID, candidate string) (domain.PrivacyMode, error) {
+func (s *Service) AuthorizeOwner(ctx context.Context, id capability.ShareID, candidate string) (domain.PayloadKind, domain.PrivacyMode, error) {
 	record, err := loadAuthorization(ctx, s.db, id, s.serverNow())
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !capability.VerifyOwnerToken(candidate, record.verifier) {
-		return "", ErrUnauthorized
+		return "", "", ErrUnauthorized
 	}
-	return record.privacy, nil
+	return record.kind, record.privacy, nil
 }
 
 func (s *Service) Update(ctx context.Context, id capability.ShareID, candidate string, patch Patch) (Share, error) {
@@ -149,8 +251,12 @@ func (s *Service) Update(ctx context.Context, id capability.ShareID, candidate s
 	if !capability.VerifyOwnerToken(candidate, authorization.verifier) {
 		return Share{}, ErrUnauthorized
 	}
-	switch authorization.privacy {
-	case domain.PrivacyStandard:
+	switch {
+	case authorization.kind == domain.PayloadFile:
+		if patch.Text != nil || patch.EncryptedText != nil {
+			return Share{}, ErrPayloadMismatch
+		}
+	case authorization.privacy == domain.PrivacyStandard:
 		if patch.EncryptedText != nil {
 			return Share{}, ErrPayloadMismatch
 		}
@@ -162,7 +268,7 @@ func (s *Service) Update(ctx context.Context, id capability.ShareID, candidate s
 				return Share{}, err
 			}
 		}
-	case domain.PrivacyEncrypted:
+	case authorization.privacy == domain.PrivacyEncrypted:
 		if patch.Text != nil {
 			return Share{}, ErrPayloadMismatch
 		}
@@ -219,6 +325,12 @@ func (s *Service) Delete(ctx context.Context, id capability.ShareID, candidate s
 	if !capability.VerifyOwnerToken(candidate, authorization.verifier) {
 		return ErrUnauthorized
 	}
+	var storageKey string
+	if authorization.kind == domain.PayloadFile {
+		if err := tx.QueryRowContext(ctx, "SELECT storage_key FROM file_payloads WHERE share_id = ?", id.String()).Scan(&storageKey); err != nil {
+			return fmt.Errorf("load File storage key: %w", err)
+		}
+	}
 	result, err := tx.ExecContext(ctx, "DELETE FROM shares WHERE id = ?", id.String())
 	if err != nil {
 		return fmt.Errorf("delete Share: %w", err)
@@ -229,6 +341,14 @@ func (s *Service) Delete(ctx context.Context, id capability.ShareID, candidate s
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit Share delete: %w", err)
 	}
+	if storageKey != "" {
+		if s.store == nil {
+			return &CleanupError{StorageKey: storageKey, Err: errors.New("object storage is unavailable")}
+		}
+		if err := s.store.Delete(storageKey); err != nil {
+			return &CleanupError{StorageKey: storageKey, Err: err}
+		}
+	}
 	return nil
 }
 
@@ -238,11 +358,8 @@ func (s *Service) insert(ctx context.Context, value Share, verifier capability.V
 		return fmt.Errorf("begin Share creation: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO shares (id, payload_kind, privacy_mode, owner_token_verifier, created_at, updated_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, value.ID.String(), value.PayloadKind, value.PrivacyMode, verifier[:], value.CreatedAt.UnixMilli(), value.UpdatedAt.UnixMilli(), nullableMillis(value.ExpiresAt)); err != nil {
-		return fmt.Errorf("insert Share metadata: %w", err)
+	if err := insertMetadata(ctx, tx, value, verifier); err != nil {
+		return err
 	}
 	switch value.PrivacyMode {
 	case domain.PrivacyStandard:
@@ -264,6 +381,16 @@ func (s *Service) insert(ctx context.Context, value Share, verifier capability.V
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit Share creation: %w", err)
+	}
+	return nil
+}
+
+func insertMetadata(ctx context.Context, tx *sql.Tx, value Share, verifier capability.Verifier) error {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO shares (id, payload_kind, privacy_mode, owner_token_verifier, created_at, updated_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, value.ID.String(), value.PayloadKind, value.PrivacyMode, verifier[:], value.CreatedAt.UnixMilli(), value.UpdatedAt.UnixMilli(), nullableMillis(value.ExpiresAt)); err != nil {
+		return fmt.Errorf("insert Share metadata: %w", err)
 	}
 	return nil
 }
@@ -337,6 +464,7 @@ type queryRower interface {
 }
 
 type authorizationRecord struct {
+	kind     domain.PayloadKind
 	privacy  domain.PrivacyMode
 	verifier capability.Verifier
 }
@@ -356,9 +484,9 @@ func loadAuthorization(ctx context.Context, db queryRower, id capability.ShareID
 	if err != nil {
 		return authorizationRecord{}, fmt.Errorf("load Share authorization: %w", err)
 	}
-	payloadKind, err := domain.ParsePayloadKind(kind)
-	if err != nil || payloadKind != domain.PayloadText {
-		return authorizationRecord{}, ErrNotFound
+	record.kind, err = domain.ParsePayloadKind(kind)
+	if err != nil {
+		return authorizationRecord{}, fmt.Errorf("load payload kind: %w", err)
 	}
 	record.privacy, err = domain.ParsePrivacyMode(privacy)
 	if err != nil {
@@ -378,17 +506,23 @@ func loadActive(ctx context.Context, db queryRower, id capability.ShareID, now t
 	var value Share
 	var idValue, kind, privacy string
 	var createdAt, updatedAt int64
-	var expiresAt sql.NullInt64
-	var format, content, protocol sql.NullString
-	var nonce, ciphertext []byte
+	var expiresAt, fileSize sql.NullInt64
+	var format, content, protocol, storageKey, filename, mediaType sql.NullString
+	var nonce, ciphertext, fileHash []byte
 	err := db.QueryRowContext(ctx, `
 		SELECT s.id, s.payload_kind, s.privacy_mode, s.created_at, s.updated_at, s.expires_at,
-		       p.format, p.content, e.protocol, e.nonce, e.ciphertext
+		       p.format, p.content, e.protocol, e.nonce, e.ciphertext,
+		       f.storage_key, f.original_filename, f.size_bytes, f.detected_media_type, f.content_sha256
 		FROM shares s
 		LEFT JOIN standard_text_payloads p ON p.share_id = s.id
 		LEFT JOIN encrypted_text_payloads e ON e.share_id = s.id
-		WHERE s.id = ? AND s.payload_kind = 'TEXT'
-	`, id.String()).Scan(&idValue, &kind, &privacy, &createdAt, &updatedAt, &expiresAt, &format, &content, &protocol, &nonce, &ciphertext)
+		LEFT JOIN file_payloads f ON f.share_id = s.id
+		WHERE s.id = ?
+	`, id.String()).Scan(
+		&idValue, &kind, &privacy, &createdAt, &updatedAt, &expiresAt,
+		&format, &content, &protocol, &nonce, &ciphertext,
+		&storageKey, &filename, &fileSize, &mediaType, &fileHash,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Share{}, ErrNotFound
 	}
@@ -414,24 +548,38 @@ func loadActive(ctx context.Context, db queryRower, id capability.ShareID, now t
 	value.CreatedAt = time.UnixMilli(createdAt).UTC()
 	value.UpdatedAt = time.UnixMilli(updatedAt).UTC()
 	value.ExpiresAt = expirationTime(expiresAt)
-	switch value.PrivacyMode {
-	case domain.PrivacyStandard:
-		if !format.Valid || !content.Valid || protocol.Valid || nonce != nil || ciphertext != nil {
+	switch value.PayloadKind {
+	case domain.PayloadText:
+		if storageKey.Valid || filename.Valid || fileSize.Valid || mediaType.Valid || fileHash != nil {
 			return Share{}, ErrPayloadMismatch
 		}
-		textFormat, err := domain.ParseTextFormat(format.String)
-		if err != nil {
-			return Share{}, fmt.Errorf("load text format: %w", err)
-		}
-		value.Text = &Text{Format: textFormat, Content: content.String}
-	case domain.PrivacyEncrypted:
-		if format.Valid || content.Valid || !protocol.Valid {
+		switch value.PrivacyMode {
+		case domain.PrivacyStandard:
+			if !format.Valid || !content.Valid || protocol.Valid || nonce != nil || ciphertext != nil {
+				return Share{}, ErrPayloadMismatch
+			}
+			textFormat, err := domain.ParseTextFormat(format.String)
+			if err != nil {
+				return Share{}, fmt.Errorf("load text format: %w", err)
+			}
+			value.Text = &Text{Format: textFormat, Content: content.String}
+		case domain.PrivacyEncrypted:
+			if format.Valid || content.Valid || !protocol.Valid {
+				return Share{}, ErrPayloadMismatch
+			}
+			value.EncryptedText = &EncryptedText{Protocol: protocol.String, Nonce: nonce, Ciphertext: ciphertext}
+			if err := validateEncryptedText(*value.EncryptedText); err != nil {
+				return Share{}, fmt.Errorf("load encrypted text: %w", err)
+			}
+		default:
 			return Share{}, ErrPayloadMismatch
 		}
-		value.EncryptedText = &EncryptedText{Protocol: protocol.String, Nonce: nonce, Ciphertext: ciphertext}
-		if err := validateEncryptedText(*value.EncryptedText); err != nil {
-			return Share{}, fmt.Errorf("load encrypted text: %w", err)
+	case domain.PayloadFile:
+		if value.PrivacyMode != domain.PrivacyStandard || format.Valid || content.Valid || protocol.Valid || nonce != nil || ciphertext != nil || !storageKey.Valid || !filename.Valid || !fileSize.Valid || !mediaType.Valid || len(fileHash) != sha256.Size {
+			return Share{}, ErrPayloadMismatch
 		}
+		value.File = &File{StorageKey: storageKey.String, Filename: filename.String, Size: fileSize.Int64, MediaType: mediaType.String}
+		copy(value.File.SHA256[:], fileHash)
 	default:
 		return Share{}, ErrPayloadMismatch
 	}

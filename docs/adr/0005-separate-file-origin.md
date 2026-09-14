@@ -9,7 +9,7 @@ User files can contain active HTML, SVG, XML, or JavaScript. MIME sniffing and c
 
 ## Decision
 
-Serve untrusted files from a separate web origin backed by a separate internal listener. A typical mapping is app/API on `127.0.0.1:8080` and files on `127.0.0.1:8081`. Do not depend only on `Host`. Default downloads to attachment unless byte-informed classification explicitly allows safe inline delivery, and send `nosniff` plus restrictive policy headers.
+Serve untrusted files from a separate web origin backed by a separate internal listener. A typical mapping is app/API on `127.0.0.1:8080` and files on `127.0.0.1:8081`. Do not depend only on `Host`. Deliver every File as an attachment regardless of byte-informed MIME classification, and send `nosniff` plus restrictive policy headers.
 
 ## Consequences
 

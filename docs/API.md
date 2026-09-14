@@ -1,6 +1,6 @@
-# Phase 3 HTTP API
+# Phase 4 HTTP API
 
-The API implements anonymous Standard and zero-knowledge Encrypted Text Shares. It is same-origin and emits no permissive CORS headers. There is no listing or search endpoint.
+The application API implements anonymous Standard Text, Encrypted Text, and Standard File Shares. It emits no permissive CORS headers; File bytes use the separately configured file origin. There is no listing or search endpoint.
 
 ## Common behavior
 
@@ -24,9 +24,9 @@ Application errors use:
 | 404 | `not_found` | Malformed ID or missing Share. |
 | 409 | plain text | Raw view is unavailable for an active Encrypted Share. |
 | 410 | `expired` | The Share reached its expiration. |
-| 413 | `request_too_large` | JSON wire body or decoded text exceeds its limit. |
-| 415 | `unsupported_media_type` | Request is not identity-encoded JSON. |
-| 422 | `unsupported_share_type` | A valid domain combination, currently File Shares, is not implemented. |
+| 413 | `request_too_large` | JSON, multipart wire body, metadata, decoded text, or File exceeds its limit. |
+| 415 | `unsupported_media_type` | Request is not identity-encoded JSON or multipart/form-data. |
+| 422 | `unsupported_share_type` | A valid domain combination, currently `FILE + ENCRYPTED`, is not implemented. |
 | 500 | `internal_error` | An internal operation failed; implementation details are not exposed. |
 
 API timestamps are RFC3339 UTC. Incoming timestamps accept RFC3339/RFC3339Nano and are normalized to UTC millisecond precision. Expiration is authoritative server time: `now >= expires_at` is expired and returns 410 without content. Expired Shares cannot be updated, deleted, or revived and await a future cleanup mechanism.
@@ -106,6 +106,31 @@ Success is 201 with ordinary metadata, `privacy_mode: "ENCRYPTED"`, and the same
 
 The browser-generated 32-byte AES key exists only in the canonical fragment `#up_e1_<43-character-unpadded-base64url>`, producing links such as `https://paste.example/p/<id>#up_e1_<key-placeholder>`. URL fragments are not normally sent in HTTP requests, and the client library never places this key in API JSON, query parameters, cookies, or browser storage.
 
+### Create Standard File
+
+Use the same resource with a streamed multipart body:
+
+```http
+POST /api/v1/shares
+Content-Type: multipart/form-data; boundary=...
+```
+
+It has exactly `metadata` and `file` parts in either order. Metadata is an `application/json` part with strict JSON-v2 semantics:
+
+```json
+{"payload_kind":"FILE","privacy_mode":"STANDARD","expires_at":null}
+```
+
+The file part requires a filename. The full wire body is capped at 66 MiB, metadata at 64 KiB, and decoded file bytes at 1–67,108,864 bytes. `FILE + ENCRYPTED` returns 422; encrypted Files are not implemented. Unknown/duplicate parts, duplicate or unknown metadata fields, malformed disposition/JSON, and invalid field casing return 400.
+
+Filenames are metadata only: path components (including legacy backslash paths) are reduced to a basename; empty, NUL, CR/LF/control-character, invalid UTF-8, and >255-byte names are rejected. The server generates an opaque storage key and never exposes it. It sniffs up to 512 bytes with `http.DetectContentType`, streams the object while computing SHA-256, and returns 201 with:
+
+```json
+{"share":{"id":"<id>","payload_kind":"FILE","privacy_mode":"STANDARD","file":{"filename":"report.pdf","size":123,"media_type":"application/pdf","sha256":"<64-lowercase-hex>","download_url":"https://files.example/f/<id>"},"created_at":"...","updated_at":"...","expires_at":null},"owner_token":"<returned-once-owner-capability>"}
+```
+
+`download_url` is constructed only from configured file origin, never Host or forwarded headers. It exposes no storage key/path or declared client MIME.
+
 ## Read
 
 ```http
@@ -184,6 +209,21 @@ For an Encrypted Share, replace ciphertext locally encrypted with the existing f
 Standard Shares reject `encrypted_text`; Encrypted Shares reject `text`. Expiration-only PATCH works for both. Privacy is immutable; changing privacy requires creating a new Share. The server cannot prove nonce uniqueness, so the official browser helper generates a fresh random nonce for every encryption.
 
 Success returns `200` and `{"share": ...}` with server-clock `updated_at`, but never returns the owner token or AES key. Metadata and the appropriate payload change commit atomically.
+
+For File Shares PATCH supports expiration only. `text`, `encrypted_text`, filename, MIME, content, kind, and privacy changes are rejected. Replace content by deleting and creating a new Share.
+
+## File delivery origin
+
+The application listener intentionally does not serve `/f/*`. The separately configured file listener serves only:
+
+```http
+GET /f/{id}
+HEAD /f/{id}
+```
+
+Active Files use the server-sniffed `Content-Type`, strong ETag `"<64-lowercase-hex-sha256>"`, and `Content-Disposition: attachment` for every MIME type. `http.ServeContent` provides normal single-range support: valid ranges return 206 and invalid ranges 416. HEAD has identical metadata/security headers and no body.
+
+All `/f/*` responses, including errors, use `nosniff`, `no-store`, no-referrer, frame denial, and the restrictive sandboxed CSP. No file is inline, no CORS is enabled, and the upload-declared MIME never controls delivery. Malformed/missing/Text/Encrypted IDs return 404; expired File Shares return 410. An existing File Share with a missing object returns 500 because storage is inconsistent.
 
 ## Delete
 

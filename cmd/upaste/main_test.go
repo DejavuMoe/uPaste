@@ -21,6 +21,14 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestApplicationHandlerDoesNotExposeFileRoutes(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	newHandler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/f/AAAAAAAAAAAAAAAAAAAAAA", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", recorder.Code)
+	}
+}
+
 func TestHealthzRejectsOtherMethods(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	newHandler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/healthz", nil))

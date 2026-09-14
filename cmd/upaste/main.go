@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/DejavuMoe/uPaste/internal/config"
 	"github.com/DejavuMoe/uPaste/internal/database"
+	"github.com/DejavuMoe/uPaste/internal/fileapi"
 	"github.com/DejavuMoe/uPaste/internal/httpapi"
+	"github.com/DejavuMoe/uPaste/internal/objectstore"
 	"github.com/DejavuMoe/uPaste/internal/share"
 )
 
@@ -59,29 +62,64 @@ func run(log *slog.Logger) (err error) {
 		}
 	}()
 
-	shareService := share.New(db, time.Now)
-	server := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           newHandler(httpapi.New(shareService, log)),
+	store, err := objectstore.OpenLocal(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("initialize object storage: %w", err)
+	}
+	shareService := share.NewWithStore(db, store, time.Now)
+	appServer := newServer(cfg.Addr, newHandler(httpapi.New(shareService, cfg.FileOrigin, log)))
+	fileServer := newServer(cfg.FileAddr, fileapi.New(shareService, log))
+	fileListener, err := net.Listen("tcp", cfg.FileAddr)
+	if err != nil {
+		return fmt.Errorf("listen file HTTP: %w", err)
+	}
+	defer fileListener.Close()
+	appListener, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("listen application HTTP: %w", err)
+	}
+	defer appListener.Close()
+
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for _, server := range []*http.Server{appServer, fileServer} {
+			if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil && !errors.Is(shutdownErr, http.ErrServerClosed) {
+				log.Error("shutdown failed", "address", server.Addr, "error", shutdownErr)
+			}
+		}
+	}()
+
+	serveErrors := make(chan error, 2)
+	go func() { serveErrors <- fileServer.Serve(fileListener) }()
+	go func() { serveErrors <- appServer.Serve(appListener) }()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for _, server := range []*http.Server{appServer, fileServer} {
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				log.Error("shutdown failed", "address", server.Addr, "error", err)
+			}
+		}
+	}()
+
+	log.Info("server listening", "address", appServer.Addr)
+	log.Info("file server listening", "address", fileServer.Addr)
+	if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve HTTP: %w", err)
+	}
+	return nil
+}
+
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    32 << 10,
 	}
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Error("shutdown failed", "error", err)
-		}
-	}()
-
-	log.Info("server listening", "address", server.Addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve HTTP: %w", err)
-	}
-	return nil
 }

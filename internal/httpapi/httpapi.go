@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	jsonv1 "encoding/json"
 	jsonv2 "encoding/json/v2"
 	"errors"
@@ -9,15 +10,23 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"path"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DejavuMoe/uPaste/internal/capability"
 	"github.com/DejavuMoe/uPaste/internal/domain"
+	"github.com/DejavuMoe/uPaste/internal/objectstore"
 	"github.com/DejavuMoe/uPaste/internal/share"
 )
 
-const maxJSONBytes = 2 << 20
+const (
+	maxJSONBytes         = 2 << 20
+	maxFileWireBytes     = 66 << 20
+	maxFileMetadataBytes = 64 << 10
+)
 
 var (
 	errBodyTooLarge       = errors.New("request body is too large")
@@ -25,12 +34,13 @@ var (
 )
 
 type API struct {
-	shares *share.Service
-	log    *slog.Logger
+	shares     *share.Service
+	fileOrigin string
+	log        *slog.Logger
 }
 
-func New(shares *share.Service, log *slog.Logger) http.Handler {
-	api := &API{shares: shares, log: log}
+func New(shares *share.Service, fileOrigin string, log *slog.Logger) http.Handler {
+	api := &API{shares: shares, fileOrigin: fileOrigin, log: log}
 	return securityHeaders(http.HandlerFunc(api.route))
 }
 
@@ -138,6 +148,10 @@ func (api *API) raw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "raw view unavailable for encrypted share", http.StatusConflict)
 		return
 	}
+	if value.File != nil {
+		http.Error(w, "share not found", http.StatusNotFound)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, value.Text.Content)
 }
@@ -231,9 +245,34 @@ type patchRequest struct {
 }
 
 func (api *API) create(w http.ResponseWriter, r *http.Request) {
-	if !requireJSON(w, r, api.writeError) {
+	if !requireIdentityEncoding(w, r, api.writeError) {
 		return
 	}
+	values := r.Header.Values("Content-Type")
+	if len(values) != 1 {
+		api.writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json or multipart/form-data")
+		return
+	}
+	mediaType, parameters, err := mime.ParseMediaType(values[0])
+	if err != nil {
+		api.writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json or multipart/form-data")
+		return
+	}
+	switch {
+	case strings.EqualFold(mediaType, "application/json"):
+		api.createJSON(w, r)
+	case strings.EqualFold(mediaType, "multipart/form-data"):
+		if parameters["boundary"] == "" {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "multipart boundary is required")
+			return
+		}
+		api.createFile(w, r)
+	default:
+		api.writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json or multipart/form-data")
+	}
+}
+
+func (api *API) createJSON(w http.ResponseWriter, r *http.Request) {
 	var request createRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		api.decodeError(w, err)
@@ -286,7 +325,157 @@ func (api *API) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Location", "/api/v1/shares/"+value.ID.String())
-	api.writeJSON(w, http.StatusCreated, createResponse{Share: responseFromShare(value), OwnerToken: token.Reveal()})
+	api.writeJSON(w, http.StatusCreated, createResponse{Share: api.responseFromShare(value), OwnerToken: token.Reveal()})
+}
+
+type fileMetadataRequest struct {
+	PayloadKind *string      `json:"payload_kind"`
+	PrivacyMode *string      `json:"privacy_mode"`
+	ExpiresAt   nullableTime `json:"expires_at"`
+}
+
+func (api *API) createFile(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength > maxFileWireBytes {
+		api.writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxFileWireBytes)
+	reader, err := r.MultipartReader()
+	if err != nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "multipart body is invalid")
+		return
+	}
+	var metadata []byte
+	var filename string
+	var staged objectstore.Staged
+	defer func() {
+		if staged != nil {
+			_ = staged.Abort()
+		}
+	}()
+	for {
+		part, nextErr := reader.NextPart()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			api.multipartError(w, nextErr)
+			return
+		}
+		disposition, parameters, parseErr := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
+		if parseErr != nil || disposition != "form-data" || parameters["name"] == "" {
+			part.Close()
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "multipart Content-Disposition is invalid")
+			return
+		}
+		switch parameters["name"] {
+		case "metadata":
+			if metadata != nil || parameters["filename"] != "" || !isJSONMediaType(part.Header.Get("Content-Type")) {
+				part.Close()
+				api.writeError(w, http.StatusBadRequest, "invalid_request", "metadata part is invalid")
+				return
+			}
+			metadata, err = io.ReadAll(io.LimitReader(part, maxFileMetadataBytes+1))
+			part.Close()
+			if err != nil {
+				api.multipartError(w, err)
+				return
+			}
+			if len(metadata) > maxFileMetadataBytes {
+				api.writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "metadata part is too large")
+				return
+			}
+		case "file":
+			if staged != nil || parameters["filename"] == "" {
+				part.Close()
+				api.writeError(w, http.StatusBadRequest, "invalid_request", "file part is invalid")
+				return
+			}
+			filename, err = sanitizeFilename(parameters["filename"])
+			if err != nil {
+				part.Close()
+				api.writeError(w, http.StatusBadRequest, "invalid_request", "filename is invalid")
+				return
+			}
+			staged, err = api.shares.StageFile(r.Context(), part)
+			part.Close()
+			if err != nil {
+				api.multipartError(w, err)
+				return
+			}
+		default:
+			part.Close()
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "multipart part is not supported")
+			return
+		}
+	}
+	if metadata == nil || staged == nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "metadata and file parts are required")
+		return
+	}
+	var request fileMetadataRequest
+	if err := jsonv2.Unmarshal(metadata, &request, jsonv2.RejectUnknownMembers(true)); err != nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "metadata is invalid")
+		return
+	}
+	if request.PayloadKind == nil || request.PrivacyMode == nil || !request.ExpiresAt.set {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "required metadata field is missing")
+		return
+	}
+	kind, kindErr := domain.ParsePayloadKind(*request.PayloadKind)
+	privacy, privacyErr := domain.ParsePrivacyMode(*request.PrivacyMode)
+	if kindErr != nil || privacyErr != nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "file metadata is invalid")
+		return
+	}
+	if kind != domain.PayloadFile || privacy != domain.PrivacyStandard {
+		if kind == domain.PayloadFile && privacy == domain.PrivacyEncrypted {
+			api.writeError(w, http.StatusUnprocessableEntity, "unsupported_share_type", "encrypted files are not implemented")
+		} else {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "multipart creation requires FILE + STANDARD")
+		}
+		return
+	}
+	value, token, err := api.shares.CreateFile(r.Context(), filename, staged, request.ExpiresAt.value)
+	if err != nil {
+		api.serviceError(w, "create File Share", err)
+		return
+	}
+	staged = nil
+	w.Header().Set("Location", "/api/v1/shares/"+value.ID.String())
+	api.writeJSON(w, http.StatusCreated, createResponse{Share: api.responseFromShare(value), OwnerToken: token.Reveal()})
+}
+
+func (api *API) multipartError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.Is(err, objectstore.ErrTooLarge) || errors.As(err, &tooLarge) {
+		api.writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "uploaded file or request is too large")
+		return
+	}
+	if errors.Is(err, objectstore.ErrEmpty) {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "file must not be empty")
+		return
+	}
+	api.log.Error("request failed", "operation", "stage File upload", "error", err)
+	api.writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+}
+
+func isJSONMediaType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	return err == nil && strings.EqualFold(mediaType, "application/json")
+}
+
+func sanitizeFilename(value string) (string, error) {
+	value = path.Base(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" || value == "." || len(value) > 255 || !utf8.ValidString(value) {
+		return "", errors.New("invalid filename")
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return "", errors.New("invalid filename")
+		}
+	}
+	return value, nil
 }
 
 func (api *API) read(w http.ResponseWriter, r *http.Request, id capability.ShareID) {
@@ -295,7 +484,7 @@ func (api *API) read(w http.ResponseWriter, r *http.Request, id capability.Share
 		api.serviceError(w, "read Share", err)
 		return
 	}
-	api.writeJSON(w, http.StatusOK, shareResponse{Share: responseFromShare(value)})
+	api.writeJSON(w, http.StatusOK, shareResponse{Share: api.responseFromShare(value)})
 }
 
 func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.ShareID) {
@@ -303,7 +492,7 @@ func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.Shar
 	if !ok {
 		return
 	}
-	privacy, err := api.shares.AuthorizeOwner(r.Context(), id, candidate)
+	kind, privacy, err := api.shares.AuthorizeOwner(r.Context(), id, candidate)
 	if err != nil {
 		api.serviceError(w, "authorize Share update", err)
 		return
@@ -321,8 +510,13 @@ func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.Shar
 		return
 	}
 	patch := share.Patch{ExpirationSet: request.ExpiresAt.set, ExpiresAt: request.ExpiresAt.value}
-	switch privacy {
-	case domain.PrivacyStandard:
+	switch {
+	case kind == domain.PayloadFile:
+		if request.Text.set || request.EncryptedText.set {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "File Shares only support expiration updates")
+			return
+		}
+	case privacy == domain.PrivacyStandard:
 		if request.EncryptedText.set {
 			api.writeError(w, http.StatusBadRequest, "invalid_request", "encrypted_text is not valid for this Share")
 			return
@@ -338,7 +532,7 @@ func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.Shar
 			}
 			patch.Text = &text
 		}
-	case domain.PrivacyEncrypted:
+	case privacy == domain.PrivacyEncrypted:
 		if request.Text.set {
 			api.writeError(w, http.StatusBadRequest, "invalid_request", "text is not valid for this Share")
 			return
@@ -360,7 +554,7 @@ func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.Shar
 		api.serviceError(w, "update Share", err)
 		return
 	}
-	api.writeJSON(w, http.StatusOK, shareResponse{Share: responseFromShare(value)})
+	api.writeJSON(w, http.StatusOK, shareResponse{Share: api.responseFromShare(value)})
 }
 
 func (api *API) delete(w http.ResponseWriter, r *http.Request, id capability.ShareID) {
@@ -369,8 +563,13 @@ func (api *API) delete(w http.ResponseWriter, r *http.Request, id capability.Sha
 		return
 	}
 	if err := api.shares.Delete(r.Context(), id, candidate); err != nil {
-		api.serviceError(w, "delete Share", err)
-		return
+		var cleanup *share.CleanupError
+		if errors.As(err, &cleanup) {
+			api.log.Error("File object cleanup failed", "operation", "delete Share", "error", cleanup.Err)
+		} else {
+			api.serviceError(w, "delete Share", err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -394,12 +593,19 @@ func (api *API) unauthorized(w http.ResponseWriter) {
 	api.writeError(w, http.StatusUnauthorized, "unauthorized", "owner authorization required")
 }
 
-func requireJSON(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, string, string)) bool {
+func requireIdentityEncoding(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, string, string)) bool {
 	for _, encoding := range r.Header.Values("Content-Encoding") {
 		if !strings.EqualFold(strings.TrimSpace(encoding), "identity") {
 			writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "content encoding is not supported")
 			return false
 		}
+	}
+	return true
+}
+
+func requireJSON(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, string, string)) bool {
+	if !requireIdentityEncoding(w, r, writeError) {
+		return false
 	}
 	values := r.Header.Values("Content-Type")
 	if len(values) != 1 {
@@ -539,6 +745,14 @@ type textResponse struct {
 	Content string            `json:"content"`
 }
 
+type fileResponse struct {
+	Filename    string `json:"filename"`
+	Size        int64  `json:"size"`
+	MediaType   string `json:"media_type"`
+	SHA256      string `json:"sha256"`
+	DownloadURL string `json:"download_url"`
+}
+
 type encryptedTextResponse struct {
 	Protocol   string `json:"protocol"`
 	Nonce      string `json:"nonce"`
@@ -551,6 +765,7 @@ type responseShare struct {
 	PrivacyMode   domain.PrivacyMode     `json:"privacy_mode"`
 	Text          *textResponse          `json:"text,omitempty"`
 	EncryptedText *encryptedTextResponse `json:"encrypted_text,omitempty"`
+	File          *fileResponse          `json:"file,omitempty"`
 	CreatedAt     string                 `json:"created_at"`
 	UpdatedAt     string                 `json:"updated_at"`
 	ExpiresAt     *string                `json:"expires_at"`
@@ -565,7 +780,7 @@ type createResponse struct {
 	OwnerToken string        `json:"owner_token"`
 }
 
-func responseFromShare(value share.Share) responseShare {
+func (api *API) responseFromShare(value share.Share) responseShare {
 	response := responseShare{
 		ID:          value.ID.String(),
 		PayloadKind: value.PayloadKind,
@@ -581,6 +796,12 @@ func responseFromShare(value share.Share) responseShare {
 			Protocol:   value.EncryptedText.Protocol,
 			Nonce:      base64.RawURLEncoding.EncodeToString(value.EncryptedText.Nonce),
 			Ciphertext: base64.RawURLEncoding.EncodeToString(value.EncryptedText.Ciphertext),
+		}
+	}
+	if value.File != nil {
+		response.File = &fileResponse{
+			Filename: value.File.Filename, Size: value.File.Size, MediaType: value.File.MediaType,
+			SHA256: hex.EncodeToString(value.File.SHA256[:]), DownloadURL: api.fileOrigin + "/f/" + value.ID.String(),
 		}
 	}
 	if value.ExpiresAt != nil {

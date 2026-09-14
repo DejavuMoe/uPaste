@@ -33,6 +33,6 @@ These names describe behavior, not a required database enum. No lifecycle `state
 
 ## Delivery phases
 
-- **Current Phase 3:** Standard and browser-encrypted Text Share create, public JSON read, owner update/delete, expiration enforcement, and tested browser Web Crypto protocol support. Raw plaintext remains available only for Standard Text; there is no product UI or rendering.
-- **Approved future direction:** separated Standard file delivery, expiration cleanup, product UI, and deployment hardening.
-- **Out of scope now:** File Shares, public listing/search, accounts, frontend product behavior, and production packaging. Features excluded above require an explicit later decision.
+- **Current Phase 4:** Standard/Encrypted Text plus Standard File create, public metadata read, owner update/delete, expiration enforcement, and separated attachment-only File delivery. Raw plaintext remains available only for Standard Text; there is no product UI or rendering.
+- **Approved future direction:** expiration/object reconciliation, product UI, and deployment hardening.
+- **Out of scope now:** Encrypted Files, public listing/search, accounts, frontend product behavior, and production packaging. Features excluded above require an explicit later decision.

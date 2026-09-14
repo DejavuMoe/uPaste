@@ -20,6 +20,7 @@ func TestMigrateFreshAndReopen(t *testing.T) {
 	assertSchemaObject(t, db, "index", "shares_expires_at_idx")
 	assertSchemaObject(t, db, "table", "standard_text_payloads")
 	assertSchemaObject(t, db, "table", "encrypted_text_payloads")
+	assertSchemaObject(t, db, "table", "file_payloads")
 	var strict, partial int
 	if err := db.QueryRow("SELECT strict FROM pragma_table_list WHERE name='shares'").Scan(&strict); err != nil {
 		t.Fatal(err)
@@ -49,7 +50,7 @@ func TestMigrateRejectsNewerSchema(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
-	if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
+	if _, err := db.Exec("PRAGMA user_version = 5"); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -61,7 +62,7 @@ func TestMigrateRejectsNewerSchema(t *testing.T) {
 	}
 }
 
-func TestMigrateVersionOneToThree(t *testing.T) {
+func TestMigrateVersionOneToFour(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
@@ -89,9 +90,10 @@ func TestMigrateVersionOneToThree(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	assertSchemaVersion(t, db, 3)
+	assertSchemaVersion(t, db, 4)
 	assertSchemaObject(t, db, "table", "standard_text_payloads")
 	assertSchemaObject(t, db, "table", "encrypted_text_payloads")
+	assertSchemaObject(t, db, "table", "file_payloads")
 	var kind, privacy string
 	var storedVerifier []byte
 	var createdAt, updatedAt int64
@@ -107,7 +109,7 @@ func TestMigrateVersionOneToThree(t *testing.T) {
 	}
 }
 
-func TestMigrateVersionTwoToThreePreservesStandardText(t *testing.T) {
+func TestMigrateVersionTwoToFourPreservesStandardText(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
@@ -140,13 +142,61 @@ func TestMigrateVersionTwoToThreePreservesStandardText(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	assertSchemaVersion(t, db, 3)
+	assertSchemaVersion(t, db, 4)
 	var format, stored string
 	if err := db.QueryRow("SELECT format, content FROM standard_text_payloads WHERE share_id = ?", id).Scan(&format, &stored); err != nil {
 		t.Fatal(err)
 	}
 	if format != "MARKDOWN" || stored != content {
 		t.Fatal("version 2 Standard Text changed during migration")
+	}
+}
+
+func TestMigrateVersionThreeToFourPreservesTextPayloads(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(dataDir, filename)
+	db := openRaw(t, path)
+	for _, name := range []string{"migrations/0001_shares.sql", "migrations/0002_standard_text_payloads.sql", "migrations/0003_encrypted_text_payloads.sql"} {
+		sqlText, err := migrationFiles.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(sqlText)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("PRAGMA user_version = 3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := insertMetadata(db, strings.Repeat("C", 22), "TEXT", "STANDARD", make([]byte, 32), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO standard_text_payloads (share_id, format, content) VALUES (?, 'PLAIN', 'standard')", strings.Repeat("C", 22)); err != nil {
+		t.Fatal(err)
+	}
+	if err := insertMetadata(db, strings.Repeat("D", 22), "TEXT", "ENCRYPTED", make([]byte, 32), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO encrypted_text_payloads (share_id, protocol, nonce, ciphertext) VALUES (?, 'UPASTE_AES_GCM_V1', ?, ?)", strings.Repeat("D", 22), make([]byte, 12), make([]byte, 19)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(context.Background(), dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	assertSchemaVersion(t, db, 4)
+	var content string
+	var nonce, ciphertext []byte
+	if err := db.QueryRow("SELECT content FROM standard_text_payloads WHERE share_id = ?", strings.Repeat("C", 22)).Scan(&content); err != nil || content != "standard" {
+		t.Fatalf("Standard payload/error = %q/%v", content, err)
+	}
+	if err := db.QueryRow("SELECT nonce, ciphertext FROM encrypted_text_payloads WHERE share_id = ?", strings.Repeat("D", 22)).Scan(&nonce, &ciphertext); err != nil || len(nonce) != 12 || len(ciphertext) != 19 {
+		t.Fatalf("Encrypted payload/error = %d/%d/%v", len(nonce), len(ciphertext), err)
 	}
 }
 
@@ -210,6 +260,37 @@ func TestFailedEncryptedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	}
 	if triggerCount != 0 {
 		t.Fatal("failed migration 3 left triggers behind")
+	}
+}
+
+func TestFailedFileMigrationDoesNotAdvanceVersion(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(dataDir, filename)
+	db := openRaw(t, path)
+	for _, name := range []string{"migrations/0001_shares.sql", "migrations/0002_standard_text_payloads.sql", "migrations/0003_encrypted_text_payloads.sql"} {
+		sqlText, err := migrationFiles.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(sqlText)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("PRAGMA user_version = 3; CREATE TABLE file_payloads (share_id TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(context.Background(), dataDir); err == nil {
+		t.Fatal("migration 4 unexpectedly succeeded")
+	}
+	db = openRaw(t, path)
+	defer db.Close()
+	assertSchemaVersion(t, db, 3)
+	var triggerCount int
+	if err := db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name = 'file_payload_privacy_insert'").Scan(&triggerCount); err != nil || triggerCount != 0 {
+		t.Fatalf("failed migration 4 trigger/error = %d/%v", triggerCount, err)
 	}
 }
 
@@ -413,6 +494,69 @@ func TestEncryptedTextPayloadSchema(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatal("encrypted payload did not cascade")
+	}
+}
+
+func TestFilePayloadSchema(t *testing.T) {
+	db, err := Open(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var strict int
+	if err := db.QueryRow("SELECT strict FROM pragma_table_list WHERE name='file_payloads'").Scan(&strict); err != nil || strict != 1 {
+		t.Fatalf("file_payloads STRICT/error = %d/%v", strict, err)
+	}
+	insertParent := func(id, kind, privacy string) {
+		if err := insertMetadata(db, id, kind, privacy, make([]byte, 32), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertFile := func(id string, key, filename, media any, size any, digest any) error {
+		_, err := db.Exec("INSERT INTO file_payloads (share_id, storage_key, original_filename, size_bytes, detected_media_type, content_sha256) VALUES (?, ?, ?, ?, ?, ?)", id, key, filename, size, media, digest)
+		return err
+	}
+	valid := strings.Repeat("Q", 22)
+	insertParent(valid, "FILE", "STANDARD")
+	if err := insertFile(valid, strings.Repeat("a", 32), "x.bin", "application/octet-stream", 1, make([]byte, 32)); err != nil {
+		t.Fatal(err)
+	}
+	for index, test := range []struct {
+		name                               string
+		key, filename, media, size, digest any
+	}{
+		{"bad key", "bad", "x", "text/plain", 1, make([]byte, 32)},
+		{"empty filename", strings.Repeat("b", 32), "", "text/plain", 1, make([]byte, 32)},
+		{"zero size", strings.Repeat("c", 32), "x", "text/plain", 0, make([]byte, 32)},
+		{"large size", strings.Repeat("d", 32), "x", "text/plain", 67108865, make([]byte, 32)},
+		{"bad hash type", strings.Repeat("e", 32), "x", "text/plain", 1, strings.Repeat("x", 32)},
+		{"short hash", strings.Repeat("f", 32), "x", "text/plain", 1, make([]byte, 31)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			id := strings.Repeat(string(rune('R'+index)), 22)
+			insertParent(id, "FILE", "STANDARD")
+			if err := insertFile(id, test.key, test.filename, test.media, test.size, test.digest); err == nil {
+				t.Fatal("invalid file payload inserted")
+			}
+		})
+	}
+	wrong := strings.Repeat("X", 22)
+	insertParent(wrong, "TEXT", "STANDARD")
+	if err := insertFile(wrong, strings.Repeat("9", 32), "x", "text/plain", 1, make([]byte, 32)); err == nil {
+		t.Fatal("file payload accepted Text parent")
+	}
+	if _, err := db.Exec("UPDATE shares SET payload_kind = 'TEXT' WHERE id = ?", valid); err == nil {
+		t.Fatal("file parent type changed beneath payload")
+	}
+	if _, err := db.Exec("UPDATE shares SET privacy_mode = 'ENCRYPTED' WHERE id = ?", valid); err == nil {
+		t.Fatal("file parent privacy changed beneath payload")
+	}
+	if _, err := db.Exec("DELETE FROM shares WHERE id = ?", valid); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow("SELECT count(*) FROM file_payloads WHERE share_id = ?", valid).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("file cascade/error = %d/%v", count, err)
 	}
 }
 

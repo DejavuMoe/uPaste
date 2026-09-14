@@ -14,12 +14,14 @@ import (
 
 	"github.com/DejavuMoe/uPaste/internal/capability"
 	"github.com/DejavuMoe/uPaste/internal/database"
+	"github.com/DejavuMoe/uPaste/internal/objectstore"
 	"github.com/DejavuMoe/uPaste/internal/share"
 )
 
 type apiTestEnv struct {
 	t       *testing.T
 	db      *sql.DB
+	store   *objectstore.Local
 	handler http.Handler
 	now     *time.Time
 	logs    *bytes.Buffer
@@ -27,15 +29,20 @@ type apiTestEnv struct {
 
 func newAPITestEnv(t *testing.T) *apiTestEnv {
 	t.Helper()
-	db, err := database.Open(context.Background(), t.TempDir())
+	dataDir := t.TempDir()
+	db, err := database.Open(context.Background(), dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := objectstore.OpenLocal(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 14, 3, 0, 0, 0, time.UTC)
 	logs := new(bytes.Buffer)
 	log := slog.New(slog.NewTextHandler(logs, nil))
-	service := share.New(db, func() time.Time { return now })
-	env := &apiTestEnv{t: t, db: db, handler: New(service, log), now: &now, logs: logs}
+	service := share.NewWithStore(db, store, func() time.Time { return now })
+	env := &apiTestEnv{t: t, db: db, store: store, handler: New(service, "https://files.example.test", log), now: &now, logs: logs}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Error(err)

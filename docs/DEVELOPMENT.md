@@ -31,9 +31,11 @@ Configuration precedence is CLI, then environment, then default:
 | Purpose | Environment | CLI | Default |
 |---|---|---|---|
 | Application address | `UPASTE_ADDR` | `-addr` | `127.0.0.1:8080` |
+| File listener address | `UPASTE_FILE_ADDR` | `-file-addr` | `127.0.0.1:8081` |
+| Public file origin | `UPASTE_FILE_ORIGIN` | `-file-origin` | `http://127.0.0.1:8081` |
 | Data directory | `UPASTE_DATA_DIR` | `-data-dir` | `./data` |
 
-The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db`; newly created directory and database modes are `0700` and `0600`. Existing operator-managed permissions are preserved. Examples:
+The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db` and `<data-dir>/objects/`; newly created directories/database/object modes are `0700`/`0600`. File and app addresses must differ. File origin must be an absolute HTTP(S) origin without path, query, fragment, or userinfo; it is never inferred from Host or forwarded headers. Existing operator-managed permissions are preserved. Examples:
 
 ```sh
 make dev-backend
@@ -45,7 +47,7 @@ The loopback default is intentional. Binding externally requires explicit operat
 
 ## Database and migrations
 
-`internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; version 3 adds `encrypted_text_payloads` and privacy/payload triggers. Migrations 0001 and 0002 remain immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.
+`internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; version 3 adds `encrypted_text_payloads`; version 4 adds `file_payloads` and File invariant triggers. Migrations 0001–0003 remain immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.
 
 The pool limit is four open and four idle connections. Write transactions acquire SQLite's immediate lock so concurrent read-then-write owner operations wait under the existing five-second busy timeout instead of failing with a stale deferred snapshot. The concurrency regression runs four updates and four independent creates together. Connection hardening and its tests are described in [ADR 0008](adr/0008-sqlite-driver.md).
 
@@ -55,7 +57,7 @@ The pool limit is four open and four idle connections. Write transactions acquir
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard and Encrypted Text routes and safe placeholder examples are documented in [API.md](API.md). Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
+`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard/Encrypted Text and Standard File routes and safe placeholder examples are documented in [API.md](API.md). The file listener is a separate origin and exposes only `/f/{id}`; configure reverse proxies with distinct origins rather than Host-based multiplexing. Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
 
 ## Go formatting scope
 
