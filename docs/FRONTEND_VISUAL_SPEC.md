@@ -30,7 +30,7 @@ To prevent generic, over-decorated, or faux-modern interfaces, the following rul
 
 - **Character**: Quiet, neutral, precise, technical utility. It should feel like a high-performance text editor or command-line companion, not an IDE and not a marketing website.
 - **Surfaces**: Crisp neutral layers with 1px solid borders.
-- **Contrast**: High legibility for long text reading. Avoid pure black (`#000000`) and pure white (`#ffffff`) surfaces to reduce eye fatigue.
+- **Contrast**: High legibility for long text reading. Avoid pure black (`#000000`) and pure white (`#ffffff`) as the dominant page canvas. Functional inner surfaces may use white in light mode where useful for contrast, while the page canvas remains off-white.
 - **Color palette**: Dominated by neutrals (grays/slates) with exactly **one** restrained accent color (a muted technical blue/indigo) used sparingly for primary actions and active focus indicators.
 
 ---

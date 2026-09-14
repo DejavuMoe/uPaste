@@ -106,11 +106,14 @@ The root route `/` presents a tabbed creation interface defaulting to the **Text
    - Presets: `Never` (default, `expires_at: null`), `1 hour`, `1 day`, `7 days`, `30 days`, `Custom…`.
    - Selecting `Custom…` opens a compact local date/time picker.
    - Values are converted to normalized RFC3339 UTC timestamps on submission.
-4. **Editor behavior**:
-   - Preserves all whitespace, indentation, line endings (`\n`, `\r\n`), and raw UTF-8 bytes.
-   - Never trims leading or trailing whitespace.
+4. **Editor behavior and browser text semantics**:
+   - The frontend does not trim or otherwise intentionally transform the textarea API value.
+   - Browser text controls normalize line endings according to HTML textarea semantics. In normal modern browser textarea editing this means line endings are represented as LF (`\n`) in the API value. The frontend does not promise preservation of an originally supplied CRLF representation after that content is edited through the browser.
+   - Server raw endpoint (`/raw/:id`) continues to return stored Standard Text bytes exactly; the browser editor operates on browser textarea string semantics.
+   - Whitespace remains significant: the frontend does not trim leading or trailing whitespace, permits whitespace-only content, and preserves tabs and spaces present in the textarea API value. Zero-byte content remains invalid. No automatic formatting, smart quotes, or indentation rewriting.
+   - Byte counting: calculated as `new TextEncoder().encode(value).byteLength` (or equivalent UTF-8 byte-length operation) against the strict 1 MiB (1,048,576 UTF-8 bytes) limit. JavaScript `value.length` must NOT be used for byte-limit calculation.
    - Displays real-time byte count against the 1 MiB limit (e.g. `2.4 KB / 1 MiB` or `1,048,000 / 1,048,576 B`).
-   - Warns visually when byte count exceeds 90% (943,718 bytes) of limit.
+   - Warns visually when byte count exceeds 90% (943,718 bytes) of the limit.
    - Disables submission if editor is empty (0 bytes) or exceeds 1,048,576 bytes.
    - Typography: System monospace font for `SOURCE`; clean system UI font for `PLAIN` and `MARKDOWN`.
    - Visible keyboard focus ring on `:focus-visible`.
@@ -196,7 +199,7 @@ Upon successful creation, the application remains on `/` and renders an explicit
   - Never concatenated with the decryption key.
 - **Navigation actions**:
   - `Open share`: Navigates to `/s/:id` (preserving fragment for encrypted shares).
-  - `Manage share`: Navigates to `/manage/:id` with `OwnerToken` passed in volatile React state.
+  - `Manage share`: Navigates to `/manage/:id` using top-level application in-memory React state / Context or a purpose-built in-memory capability store. `OwnerToken` MUST NOT be stored in or transported through `history.state`, React Router `location.state`, URL state, browser storage, cookies, or any browser-persisted navigation mechanism.
   - `New share`: Resets creation form to blank state.
 
 ---
@@ -317,8 +320,10 @@ Management allows the creator to edit content (Text only), adjust expiration, or
 
 ### 6.1 Authentication and token entry
 
-- If the user navigated directly from the creation success screen, `OwnerToken` is passed in volatile in-memory router state.
-- If the user opens `/manage/:id` directly or refreshes the page, the in-memory token is absent. The view presents a token entry prompt:
+- If the user navigated directly from the creation success screen, `OwnerToken` is passed via top-level application in-memory React state / Context or an equally scoped non-persistent module memory capability store. It MUST NOT use `history.state` or React Router `location.state`.
+- If the user reloads `/manage/:id`, closes the tab/window, opens `/manage/:id` in a new tab, or navigates directly, `OwnerToken` is absent from memory, prompting the token entry modal.
+- A browser Back/Forward navigation MUST NOT recover `OwnerToken` from History API serialized state.
+- The view presents a token entry prompt:
   ```text
   ┌────────────────────────────────────────────────────────────┐
   │ Management token required                                  │
@@ -332,7 +337,8 @@ Management allows the creator to edit content (Text only), adjust expiration, or
   └────────────────────────────────────────────────────────────┘
   ```
 - Token input is masked by default with a `Reveal` toggle.
-- Submitted token is retained **only in React component memory**. It is never stored in `localStorage`, `sessionStorage`, `cookies`, or URL query parameters.
+- Submitted token is retained **strictly in application process memory** (top-level state / context). It is never stored in or transported through `history.state`, React Router `location.state`, `localStorage`, `sessionStorage`, `cookies`, `IndexedDB`, `Cache Storage`, service workers, or URL parameters/fragments.
+- Cleanup: On successful Share deletion, the associated `OwnerToken` is immediately cleared from application memory. Full page reload or tab close clears it naturally.
 
 ### 6.2 Capabilities matrix by payload kind
 
@@ -343,12 +349,20 @@ Management allows the creator to edit content (Text only), adjust expiration, or
 | Change expiration | Allowed | Allowed | Allowed | Allowed |
 | Delete share | Allowed | Allowed | Allowed | Allowed |
 
-### 6.3 Encrypted management URL rules
+### 6.3 Dirty-state and expiration-only updates
+- The frontend distinguishes between:
+  - Content unchanged + expiration changed
+  - Content actually edited
+- When only expiration is modified, the frontend sends `PATCH /api/v1/shares/:id` with `expires_at` only. It must NOT re-send the text payload merely because the management view was opened. This avoids accidental newline normalization when content was not edited.
+- For Encrypted Text, expiration-only updates send `expires_at` without re-encrypting or sending a new ciphertext and nonce.
+- If existing fetched Standard Text contains CRLF, loading it into the editable textarea applies browser text-control newline normalization. If the user then modifies and saves that text, the frontend does not guarantee restoration of the original CRLF byte representation.
+
+### 6.4 Encrypted management URL rules
 - Encrypted shares may be managed via `/manage/:id#up_e1_<key>`. The URL fragment carries the decryption key across management views.
 - Navigating between `/s/:id#up_e1_...` and `/manage/:id#up_e1_...` must preserve the URL fragment.
 - The `OwnerToken` must **never** appear in the URL fragment or query parameters.
 
-### 6.4 Delete interaction
+### 6.5 Delete interaction
 
 Deletion is immediate and permanent:
 1. User clicks `Delete share` (styled as a danger button).
@@ -376,7 +390,7 @@ Deletion is immediate and permanent:
    └────────────────────────────────────────────────────────┘
    ```
 
-### 6.5 Unsaved draft protection
+### 6.6 Unsaved draft protection
 If the user modifies content in the editor and attempts internal navigation, prompt the user with a non-blocking warning modal before discarding changes. Drafts are not persisted to browser storage.
 
 ---

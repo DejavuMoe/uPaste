@@ -1,4 +1,4 @@
-# Phase 4 HTTP API
+# uPaste HTTP API
 
 The application API implements anonymous Standard Text, Encrypted Text, and Standard File Shares. It emits no permissive CORS headers; File bytes use the separately configured file origin. There is no listing or search endpoint.
 
@@ -30,7 +30,7 @@ Application errors use:
 | 429 | `rate_limited` | Process-local IP-derived limiter rejected the request; `Retry-After` is set. |
 | 500 | `internal_error` | An internal operation failed; implementation details are not exposed. |
 
-API timestamps are RFC3339 UTC. Incoming timestamps accept RFC3339/RFC3339Nano and are normalized to UTC millisecond precision. Expiration is authoritative server time: `now >= expires_at` is expired and returns 410 without content. Expired Shares cannot be updated, deleted, or revived and await a future cleanup mechanism.
+API timestamps are RFC3339 UTC. Incoming timestamps accept RFC3339/RFC3339Nano and are normalized to UTC millisecond precision. Expiration is authoritative server time: `now >= expires_at` is expired and returns 410 without content. Expiration is synchronously authoritative for accessibility. Expired Shares cannot be read, updated, deleted, or revived through normal application operations. Phase 5 maintenance later physically purges expired metadata/payloads asynchronously. For expired File Shares, physical File-object cleanup remains subject to the existing maintenance/reconciliation rules.
 
 ## Rate limits
 
@@ -239,7 +239,7 @@ DELETE /api/v1/shares/{id}
 Authorization: Bearer <owner-token>
 ```
 
-An active authorized Share is physically removed and returns `204 No Content`. Standard or Encrypted payload is removed by foreign-key cascade. Later reads return 404, and a second delete returns 404. Expired Shares return 410 and remain for future cleanup. There is no soft delete or recycle bin.
+An active authorized Share is physically removed and returns `204 No Content`. Standard or Encrypted payload is removed by foreign-key cascade. Later reads return 404, and a second delete returns 404. Expired Shares return 410 and are later purged asynchronously by maintenance. There is no soft delete or recycle bin.
 
 ## Methods
 

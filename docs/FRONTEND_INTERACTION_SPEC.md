@@ -40,12 +40,18 @@ The following matrix formally defines the 21 mandatory application states specif
 1. **Generation**: Generated on the backend during creation using 32 random bytes (`up_o1_<43-char-base64url>`).
 2. **Delivery**: Returned once in the JSON response of `POST /api/v1/shares`.
 3. **Display**: Displayed on the creation confirmation screen masked by default (`up_o1_••••••••••••••••••••••••••••••••••••••`). The user can click `Reveal` to unmask or `Copy` to copy it to clipboard.
-4. **Volatile in-memory transport**:
-   - When the user clicks `Manage share` immediately after creation, `OwnerToken` is passed via React router state (`history.state`).
-   - If the user reloads `/manage/:id` or opens it in a new tab, `OwnerToken` is absent from memory, prompting the token input modal.
+4. **Volatile in-memory handoff**:
+   - When the user clicks `Manage share` immediately after creation, `OwnerToken` is made available exclusively via top-level application in-memory React state / Context or an equally scoped non-persistent module memory capability store.
+   - `OwnerToken` MUST NOT be stored in or transported through `history.state`, React Router `location.state`, URL state, browser storage, cookies, or any browser-persisted navigation mechanism.
+   - Browser Back/Forward navigation MUST NOT recover `OwnerToken` from History API serialized state.
+   - If the user reloads `/manage/:id`, closes the tab/window, opens `/manage/:id` in a new tab, or navigates directly, `OwnerToken` is absent from memory, prompting the token input modal.
 5. **Strict non-persistence rule**:
-   - `OwnerToken` is **never** written to `localStorage`, `sessionStorage`, `document.cookie`, or `IndexedDB`.
+   - `OwnerToken` is **never** written to `history.state`, React Router `location.state`, `localStorage`, `sessionStorage`, `document.cookie`, `IndexedDB`, `Cache Storage`, or service workers.
    - `OwnerToken` is **never** placed in the URL query string, pathname, or fragment.
+6. **OwnerToken lifetime and cleanup**:
+   - `OwnerToken` exists only while the current single-page application JavaScript execution context is alive.
+   - Upon successful Share deletion (`DELETE /api/v1/shares/:id`), the associated `OwnerToken` is immediately cleared from application memory.
+   - Full page reload or tab close clears it naturally.
 
 ### 2.2 Encrypted Text decryption key handling
 1. **Generation**: Generated client-side using `window.crypto.getRandomValues(new Uint8Array(32))`.
@@ -92,18 +98,29 @@ The following matrix formally defines the 21 mandatory application states specif
 
 ---
 
-## 5. Dirty state and unsaved draft protection
+## 5. Dirty state, expiration updates, and browser text semantics
 
-1. **Detection**:
-   - An editor session is marked dirty when current text differs from initial text (or when a file has been selected).
-2. **Internal route change**:
-   - If the user attempts to navigate away (e.g. clicking `New share` or the header brand) while dirty, a confirmation dialog appears:
+1. **Dirty state detection**:
+   - The editor distinguishes between:
+     - **Content unchanged + expiration changed**: Form has adjusted only the expiration selector.
+     - **Content edited**: Current text differs from initially loaded text (or a file has been selected/removed).
+2. **Expiration-only updates**:
+   - When only expiration is modified on `/manage/:id`, the frontend submits `PATCH /api/v1/shares/:id` with `expires_at` only.
+   - It must NOT re-send the text payload or re-encrypt the content merely because the management view was opened. This prevents accidental newline normalization when content was not edited and avoids unnecessary ciphertext/nonce churn.
+3. **Browser textarea and newline semantics**:
+   - The frontend does not trim or otherwise intentionally transform the textarea API value.
+   - Browser text controls normalize line endings according to HTML textarea semantics (represented as LF `\n` in modern browser textarea API values). The frontend does not promise preservation of an originally supplied CRLF representation after editing in the browser.
+   - If fetched Standard Text from the server contains CRLF, loading it into an editable textarea applies browser text-control newline normalization. If modified and saved, the frontend does not guarantee restoration of the original CRLF byte representation.
+   - Whitespace remains significant: leading/trailing whitespace is never trimmed, whitespace-only content is permitted, and tabs/spaces present in the textarea value are preserved.
+   - Byte counting is strictly calculated via `new TextEncoder().encode(value).byteLength` (or equivalent UTF-8 byte-length operation) against the 1,048,576 UTF-8 bytes limit; `value.length` is never used.
+4. **Internal route change warning**:
+   - If the user attempts to navigate away while dirty (e.g. clicking `New share` or the header brand), a confirmation dialog appears:
      > *You have unsaved changes. Are you sure you want to discard your draft?*
      > `[Discard and leave]` `[Keep editing]`
-3. **External browser navigation / reload**:
+5. **External browser navigation / reload**:
    - Hook `window.addEventListener("beforeunload", handler)` when dirty.
    - Call `e.preventDefault()` to trigger the standard browser exit confirmation.
-4. **Drafts not persisted**:
+6. **Drafts not persisted**:
    - In accordance with the security model, unsaved drafts are never saved to `localStorage` or `sessionStorage`.
 
 ---
