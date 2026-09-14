@@ -2,7 +2,7 @@
 
 ## Prerequisites and pinned tools
 
-Install mise. The repository pins Go 1.27.1, Node.js 24.21.0, and pnpm 10.34.5 in `mise.toml`; `web/package.json` also pins pnpm. SQLite is supplied by the pure-Go `modernc.org/sqlite` dependency, so no system SQLite, GCC, or CGO toolchain is required.
+Install mise. The repository pins Go 1.27.1, Node.js 24.21.0, and pnpm 10.34.5 in `mise.toml`; `web/package.json` also pins pnpm. SQLite is supplied by the pure-Go `modernc.org/sqlite` dependency, so no system SQLite, GCC, or CGO toolchain is required. Browser crypto tests use Vitest 5.0.0 with Node's standards-compatible Web Crypto globals and need no DOM/browser service.
 
 ```sh
 mise install
@@ -17,7 +17,7 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 |---|---|
 | `make format` | Format all project-owned Go source. |
 | `make check` | Fail on unformatted project Go source, run `go vet`, and strict TypeScript checking. |
-| `make test` | Run all Go tests, including on-disk SQLite integration tests. |
+| `make test` | Run all Go/SQLite tests and frontend Vitest protocol tests. |
 | `make build` | Build the Go executable and production frontend bundle. |
 | `make dev-backend` | Run the API and initialize its database. |
 | `make dev-frontend` | Run Vite's development server. |
@@ -45,7 +45,7 @@ The loopback default is intentional. Binding externally requires explicit operat
 
 ## Database and migrations
 
-`internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; migration 0001 remains immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.
+`internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; version 3 adds `encrypted_text_payloads` and privacy/payload triggers. Migrations 0001 and 0002 remain immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.
 
 The pool limit is four open and four idle connections. Write transactions acquire SQLite's immediate lock so concurrent read-then-write owner operations wait under the existing five-second busy timeout instead of failing with a stale deferred snapshot. The concurrency regression runs four updates and four independent creates together. Connection hardening and its tests are described in [ADR 0008](adr/0008-sqlite-driver.md).
 
@@ -55,7 +55,7 @@ The pool limit is four open and four idle connections. Write transactions acquir
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard Text routes and safe placeholder examples are documented in [API.md](API.md). Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
+`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard and Encrypted Text routes and safe placeholder examples are documented in [API.md](API.md). Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
 
 ## Go formatting scope
 
@@ -63,4 +63,4 @@ curl -i http://127.0.0.1:8080/healthz
 
 ## CI
 
-CI runs project-wide formatting, vet, all Go tests/build, a frozen pnpm install, TypeScript checking, and the frontend build. Pure-Go on-disk SQLite integration tests run without system packages. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
+CI runs project-wide formatting, vet, all Go tests/build, a frozen pnpm install, TypeScript checking, Vitest browser-crypto tests in Node's standards-compatible Web Crypto environment, and the frontend build. Pure-Go on-disk SQLite integration tests run without system packages. Action references are immutable SHAs annotated with their upstream major tag in the workflow.

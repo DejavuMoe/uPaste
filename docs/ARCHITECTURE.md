@@ -1,8 +1,8 @@
 # Architecture
 
-## Current Phase 2 implementation
+## Current Phase 3 implementation
 
-uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check. Phase 2 adds Standard Text create/read/raw/owner-update/delete HTTP behavior; `web/` remains an independently built shell without product UI.
+uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check. Phase 3 adds Standard and zero-knowledge Encrypted Text create/read/owner-update/delete HTTP behavior; Standard raw remains available while Encrypted raw returns 409. `web/` remains an independently built shell without product UI, plus a React-independent Web Crypto protocol module.
 
 The implemented internal packages are deliberately limited:
 
@@ -10,10 +10,12 @@ The implemented internal packages are deliberately limited:
 - `capability`: canonical random Share IDs and owner capabilities plus SHA-256 verification.
 - `config`: CLI/environment/default resolution for address and data directory.
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
-- `share`: concrete transactional Standard Text behavior using an injected clock.
+- `share`: concrete transactional Standard and Encrypted Text behavior using an injected clock.
 - `httpapi`: strict Go JSON v2 request decoding, bearer-capability authorization, stable legacy-compatible response encoding, and route-specific security headers.
 
-There is no encrypted text, File Share behavior, generic repository layer, cleanup worker, rate limiting, upload handling, or embedded frontend yet.
+There is no File Share behavior, generic repository layer, cleanup worker, rate limiting, upload handling, encrypted product UI, or embedded frontend yet.
+
+The browser module `web/src/crypto/encryptedText.ts` owns key generation, AES-256-GCM encryption/decryption, the binary plaintext envelope, and strict key-fragment/base64url handling. The HTTP server never decrypts and has no production AES key handling. API responses model Standard and Encrypted payloads explicitly so irrelevant zero-valued fields are never serialized.
 
 ## Persistence foundation
 
@@ -33,7 +35,7 @@ _txlock=immediate
 
 The pool is conservatively bounded to four open and four idle connections without an arbitrary connection lifetime. Immediate write transactions were enabled after a four-owner-update/four-independent-create stress test repeatedly reproduced deferred-transaction `SQLITE_BUSY` and `SQLITE_BUSY_SNAPSHOT`; the same test passes repeatedly with immediate acquisition and the existing five-second busy timeout. The pool, WAL mode, and timeout remain unchanged. Shared cache, OFD locking, loadable extensions, and other speculative SQLite tuning are not enabled.
 
-Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates Share metadata and a partial expiration index; immutable migration 2 adds the separate `standard_text_payloads` STRICT table. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
+Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates Share metadata and a partial expiration index; immutable migration 2 adds `standard_text_payloads`; migration 3 adds `encrypted_text_payloads` and payload/privacy invariant triggers. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
 
 ## Frozen V1 boundaries
 
@@ -47,6 +49,6 @@ The deployable shape remains one Go binary, one SQLite database, and one data di
 
 The same binary may later expose separate loopback listeners for the application/API and untrusted file origin, commonly `127.0.0.1:8080` and `127.0.0.1:8081`. Reverse-proxy routing must provide separate origins and must not rely only on `Host`. TLS normally terminates at a trusted reverse proxy.
 
-## Not implemented in Phase 2
+## Not implemented in Phase 3
 
-Encrypted Text and File Share APIs/persistence, uploads, rate limiting, expiration cleanup, file listener, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
+File Share APIs/persistence, uploads, rate limiting, expiration cleanup, file listener, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.

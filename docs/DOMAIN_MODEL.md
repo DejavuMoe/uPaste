@@ -19,14 +19,14 @@ Every future read path derives expiration and rejects expired content immediatel
 
 A public Share ID is a 128-bit `crypto/rand` value encoded as unpadded base64url: 16 bytes become 22 URL-safe characters. It is opaque, non-sequential, contains no timestamp or host data, and grants no management authority.
 
-The owner capability is independently generated from 32 `crypto/rand` bytes and has canonical form `up_o1_<unpadded-base64url>`. Its 256-bit random portion carries authority. Future management requests send it only as `Authorization: Bearer <owner-token>`. Persistence stores only `SHA-256(canonical_owner_token)`, and verification uses constant-time comparison.
+The owner capability is independently generated from 32 `crypto/rand` bytes and has canonical form `up_o1_<unpadded-base64url>`. Its 256-bit random portion carries management authority. Management requests send it only as `Authorization: Bearer <owner-token>`. Persistence stores only `SHA-256(canonical_owner_token)`, and verification uses constant-time comparison. An Encrypted Text AES fragment key is a separate confidentiality capability: it decrypts but cannot manage, while the owner capability manages but cannot decrypt.
 
 ## Initial persistence constraints
 
 The `shares` metadata table stores `id`, `payload_kind`, `privacy_mode`, `owner_token_verifier`, `created_at`, `updated_at`, and nullable `expires_at`. Timestamps are integer Unix milliseconds with UTC semantics; `expires_at = NULL` means no automatic expiration, subject to instance policy.
 
-Standard plaintext is stored separately in `standard_text_payloads`, one row per Share, with format and 1–1,048,576 UTF-8 content bytes. Encrypted text and file metadata remain deliberately undefined rather than being shoehorned into this table.
+Standard plaintext is stored separately in `standard_text_payloads`, one row per Share, with format and 1–1,048,576 UTF-8 content bytes. Encrypted Text is stored separately in `encrypted_text_payloads` as protocol, 12-byte nonce, and 19–1,048,594-byte combined ciphertext/tag BLOBs. It stores no key, plaintext, or format. Migration-3 triggers enforce that each payload table matches its parent privacy mode. File metadata remains undefined.
 
 ## Current implementation
 
-Phase 2 retains the closed domain primitives and caller-clocked expiration helper where `now == expires_at` is expired. It now implements transactional Standard Text creation, shared active loading for JSON/raw reads, owner-capability mutation, physical cascade deletion, and the separate constrained payload table. Expired rows remain physically present but cannot be read, updated, deleted, or revived through application operations. There is still no persisted lifecycle state, encrypted payload, File payload, listing, or cleanup operation.
+Phase 3 retains the closed domain primitives and caller-clocked expiration helper where `now == expires_at` is expired. It implements transactional Standard and Encrypted Text creation, explicit one-of payload modeling, active JSON reads, owner-capability mutation, physical cascade deletion, and constrained payload tables. Encrypted raw plaintext is unavailable because the server has no key. Expired rows remain physically present but cannot be read, updated, deleted, or revived through application operations. There is still no persisted lifecycle state, File payload, listing, or cleanup operation.

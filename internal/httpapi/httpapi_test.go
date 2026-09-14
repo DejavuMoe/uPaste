@@ -124,7 +124,7 @@ func TestCreateStandardText(t *testing.T) {
 	for _, format := range []string{"PLAIN", "SOURCE", "MARKDOWN"} {
 		t.Run(format, func(t *testing.T) {
 			response := env.create(format, "  content\n", nil)
-			if response.Share.PayloadKind != "TEXT" || response.Share.PrivacyMode != "STANDARD" || string(response.Share.Text.Format) != format || response.Share.Text.Content != "  content\n" {
+			if response.Share.PayloadKind != "TEXT" || response.Share.PrivacyMode != "STANDARD" || response.Share.Text == nil || string(response.Share.Text.Format) != format || response.Share.Text.Content != "  content\n" || response.Share.EncryptedText != nil {
 				t.Fatal("create response changed Share data")
 			}
 			if response.Share.ExpiresAt != nil {
@@ -205,7 +205,7 @@ func TestCreateValidation(t *testing.T) {
 		{"invalid privacy", func(v map[string]any) { v["privacy_mode"] = "OTHER" }, 400, "invalid_request"},
 		{"invalid format", func(v map[string]any) { v["text"].(map[string]any)["format"] = "OTHER" }, 400, "invalid_request"},
 		{"file", func(v map[string]any) { v["payload_kind"] = "FILE" }, 422, "unsupported_share_type"},
-		{"encrypted text", func(v map[string]any) { v["privacy_mode"] = "ENCRYPTED" }, 422, "unsupported_share_type"},
+		{"missing encrypted text", func(v map[string]any) { v["privacy_mode"] = "ENCRYPTED"; delete(v, "text") }, 400, "invalid_request"},
 		{"encrypted file", func(v map[string]any) { v["payload_kind"] = "FILE"; v["privacy_mode"] = "ENCRYPTED" }, 422, "unsupported_share_type"},
 		{"unknown field", func(v map[string]any) { v["unknown"] = true }, 400, "invalid_request"},
 		{"unknown text field", func(v map[string]any) { v["text"].(map[string]any)["unknown"] = true }, 400, "invalid_request"},

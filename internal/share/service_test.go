@@ -31,7 +31,7 @@ func TestCreateIsAtomicWhenPayloadInsertFails(t *testing.T) {
 		ID:          id,
 		PayloadKind: domain.PayloadText,
 		PrivacyMode: domain.PrivacyStandard,
-		Text:        Text{Format: domain.TextFormat("INVALID"), Content: "content"},
+		Text:        &Text{Format: domain.TextFormat("INVALID"), Content: "content"},
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}

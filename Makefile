@@ -10,6 +10,7 @@ check:
 
 test:
 	mise exec -- go test ./...
+	mise exec -- pnpm --dir web test
 
 build:
 	mise exec -- go build ./cmd/upaste

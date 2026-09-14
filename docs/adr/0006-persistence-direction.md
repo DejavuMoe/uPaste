@@ -13,4 +13,4 @@ Use SQLite in WAL mode through `database/sql` with explicit SQL migrations and n
 
 ## Consequences
 
-Deployment and backup can remain a binary, database, and data directory. SQL stays visible and controllable. SQLite write concurrency and single-host storage set scaling limits; multi-host operation requires a later architecture change. Phase 1 introduced connection, migration, and metadata-schema foundations; Phase 2 adds transactional Standard Text rows in SQLite. Object consistency, cleanup, backup handling, File payload storage, and its interface remain deferred until those operations exist.
+Deployment and backup can remain a binary, database, and data directory. SQL stays visible and controllable. SQLite write concurrency and single-host storage set scaling limits; multi-host operation requires a later architecture change. Phase 1 introduced connection, migration, and metadata-schema foundations; Phase 2 adds transactional Standard Text rows in SQLite, and Phase 3 adds Encrypted Text ciphertext rows. Object consistency, cleanup, backup handling, File payload storage, and its interface remain deferred until those operations exist.

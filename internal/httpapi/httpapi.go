@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	jsonv1 "encoding/json"
 	jsonv2 "encoding/json/v2"
 	"errors"
@@ -18,7 +19,10 @@ import (
 
 const maxJSONBytes = 2 << 20
 
-var errBodyTooLarge = errors.New("request body is too large")
+var (
+	errBodyTooLarge       = errors.New("request body is too large")
+	errCiphertextTooLarge = errors.New("encrypted ciphertext is too large")
+)
 
 type API struct {
 	shares *share.Service
@@ -130,6 +134,10 @@ func (api *API) raw(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if value.EncryptedText != nil {
+		http.Error(w, "raw view unavailable for encrypted share", http.StatusConflict)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, value.Text.Content)
 }
@@ -141,6 +149,12 @@ func (api *API) apiNotFound(w http.ResponseWriter, _ *http.Request) {
 type textRequest struct {
 	Format  *string `json:"format"`
 	Content *string `json:"content"`
+}
+
+type encryptedTextRequest struct {
+	Protocol   *string `json:"protocol"`
+	Nonce      *string `json:"nonce"`
+	Ciphertext *string `json:"ciphertext"`
 }
 
 type nullableTime struct {
@@ -184,16 +198,36 @@ func (value *optionalText) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type optionalEncryptedText struct {
+	set   bool
+	value *encryptedTextRequest
+}
+
+func (value *optionalEncryptedText) UnmarshalJSON(data []byte) error {
+	value.set = true
+	if string(data) == "null" {
+		return nil
+	}
+	var encrypted encryptedTextRequest
+	if err := jsonv2.Unmarshal(data, &encrypted, jsonv2.RejectUnknownMembers(true)); err != nil {
+		return err
+	}
+	value.value = &encrypted
+	return nil
+}
+
 type createRequest struct {
-	PayloadKind *string      `json:"payload_kind"`
-	PrivacyMode *string      `json:"privacy_mode"`
-	Text        *textRequest `json:"text"`
-	ExpiresAt   nullableTime `json:"expires_at"`
+	PayloadKind   *string               `json:"payload_kind"`
+	PrivacyMode   *string               `json:"privacy_mode"`
+	Text          optionalText          `json:"text"`
+	EncryptedText optionalEncryptedText `json:"encrypted_text"`
+	ExpiresAt     nullableTime          `json:"expires_at"`
 }
 
 type patchRequest struct {
-	Text      optionalText `json:"text"`
-	ExpiresAt nullableTime `json:"expires_at"`
+	Text          optionalText          `json:"text"`
+	EncryptedText optionalEncryptedText `json:"encrypted_text"`
+	ExpiresAt     nullableTime          `json:"expires_at"`
 }
 
 func (api *API) create(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +239,7 @@ func (api *API) create(w http.ResponseWriter, r *http.Request) {
 		api.decodeError(w, err)
 		return
 	}
-	if request.PayloadKind == nil || request.PrivacyMode == nil || request.Text == nil || !request.ExpiresAt.set {
+	if request.PayloadKind == nil || request.PrivacyMode == nil || !request.ExpiresAt.set {
 		api.writeError(w, http.StatusBadRequest, "invalid_request", "required field is missing")
 		return
 	}
@@ -219,15 +253,34 @@ func (api *API) create(w http.ResponseWriter, r *http.Request) {
 		api.writeError(w, http.StatusBadRequest, "invalid_request", "invalid privacy_mode")
 		return
 	}
-	if kind != domain.PayloadText || privacy != domain.PrivacyStandard {
+	if kind != domain.PayloadText {
 		api.writeError(w, http.StatusUnprocessableEntity, "unsupported_share_type", "share type is not implemented")
 		return
 	}
-	text, ok := api.validateText(w, request.Text)
-	if !ok {
-		return
+	var value share.Share
+	var token capability.OwnerToken
+	switch privacy {
+	case domain.PrivacyStandard:
+		if !request.Text.set || request.Text.value == nil || request.EncryptedText.set {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "text payload does not match privacy_mode")
+			return
+		}
+		text, ok := api.validateText(w, request.Text.value)
+		if !ok {
+			return
+		}
+		value, token, err = api.shares.Create(r.Context(), share.CreateInput{Text: text, ExpiresAt: request.ExpiresAt.value})
+	case domain.PrivacyEncrypted:
+		if !request.EncryptedText.set || request.EncryptedText.value == nil || request.Text.set {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "encrypted_text payload does not match privacy_mode")
+			return
+		}
+		encrypted, ok := api.validateEncryptedText(w, request.EncryptedText.value)
+		if !ok {
+			return
+		}
+		value, token, err = api.shares.CreateEncrypted(r.Context(), share.EncryptedCreateInput{EncryptedText: encrypted, ExpiresAt: request.ExpiresAt.value})
 	}
-	value, token, err := api.shares.Create(r.Context(), share.CreateInput{Text: text, ExpiresAt: request.ExpiresAt.value})
 	if err != nil {
 		api.serviceError(w, "create Share", err)
 		return
@@ -250,7 +303,8 @@ func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.Shar
 	if !ok {
 		return
 	}
-	if err := api.shares.AuthorizeOwner(r.Context(), id, candidate); err != nil {
+	privacy, err := api.shares.AuthorizeOwner(r.Context(), id, candidate)
+	if err != nil {
 		api.serviceError(w, "authorize Share update", err)
 		return
 	}
@@ -262,21 +316,44 @@ func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.Shar
 		api.decodeError(w, err)
 		return
 	}
-	if !request.Text.set && !request.ExpiresAt.set {
+	if !request.Text.set && !request.EncryptedText.set && !request.ExpiresAt.set {
 		api.writeError(w, http.StatusBadRequest, "invalid_request", "patch must change text or expiration")
 		return
 	}
 	patch := share.Patch{ExpirationSet: request.ExpiresAt.set, ExpiresAt: request.ExpiresAt.value}
-	if request.Text.set {
-		if request.Text.value == nil {
-			api.writeError(w, http.StatusBadRequest, "invalid_request", "text must be an object")
+	switch privacy {
+	case domain.PrivacyStandard:
+		if request.EncryptedText.set {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "encrypted_text is not valid for this Share")
 			return
 		}
-		text, ok := api.validateText(w, request.Text.value)
-		if !ok {
+		if request.Text.set {
+			if request.Text.value == nil {
+				api.writeError(w, http.StatusBadRequest, "invalid_request", "text must be an object")
+				return
+			}
+			text, ok := api.validateText(w, request.Text.value)
+			if !ok {
+				return
+			}
+			patch.Text = &text
+		}
+	case domain.PrivacyEncrypted:
+		if request.Text.set {
+			api.writeError(w, http.StatusBadRequest, "invalid_request", "text is not valid for this Share")
 			return
 		}
-		patch.Text = &text
+		if request.EncryptedText.set {
+			if request.EncryptedText.value == nil {
+				api.writeError(w, http.StatusBadRequest, "invalid_request", "encrypted_text must be an object")
+				return
+			}
+			encrypted, ok := api.validateEncryptedText(w, request.EncryptedText.value)
+			if !ok {
+				return
+			}
+			patch.EncryptedText = &encrypted
+		}
 	}
 	value, err := api.shares.Update(r.Context(), id, candidate, patch)
 	if err != nil {
@@ -373,6 +450,48 @@ func (api *API) validateText(w http.ResponseWriter, request *textRequest) (share
 	return share.Text{Format: format, Content: *request.Content}, true
 }
 
+func (api *API) validateEncryptedText(w http.ResponseWriter, request *encryptedTextRequest) (share.EncryptedText, bool) {
+	if request.Protocol == nil || request.Nonce == nil || request.Ciphertext == nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "encrypted_text fields are required")
+		return share.EncryptedText{}, false
+	}
+	if *request.Protocol != share.EncryptedTextProtocolV1 {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "invalid encrypted_text protocol")
+		return share.EncryptedText{}, false
+	}
+	nonce, err := decodeBase64URL(*request.Nonce, share.EncryptedNonceBytes, share.EncryptedNonceBytes)
+	if err != nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "invalid encrypted_text nonce")
+		return share.EncryptedText{}, false
+	}
+	ciphertext, err := decodeBase64URL(*request.Ciphertext, share.MinEncryptedCipherBytes, share.MaxEncryptedCipherBytes)
+	if errors.Is(err, errCiphertextTooLarge) {
+		api.writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "encrypted ciphertext is too large")
+		return share.EncryptedText{}, false
+	}
+	if err != nil {
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "invalid encrypted_text ciphertext")
+		return share.EncryptedText{}, false
+	}
+	return share.EncryptedText{Protocol: *request.Protocol, Nonce: nonce, Ciphertext: ciphertext}, true
+}
+
+func decodeBase64URL(value string, minimum, maximum int) ([]byte, error) {
+	for _, character := range []byte(value) {
+		if !((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '-' || character == '_') {
+			return nil, errors.New("invalid canonical base64url")
+		}
+	}
+	if len(value) > base64.RawURLEncoding.EncodedLen(maximum) {
+		return nil, errCiphertextTooLarge
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(decoded) < minimum || len(decoded) > maximum || base64.RawURLEncoding.EncodeToString(decoded) != value {
+		return nil, errors.New("invalid canonical base64url")
+	}
+	return decoded, nil
+}
+
 func (api *API) decodeError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errBodyTooLarge) {
 		api.writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
@@ -393,6 +512,8 @@ func (api *API) serviceError(w http.ResponseWriter, operation string, err error)
 		api.writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, share.ErrInvalidText):
 		api.writeError(w, http.StatusBadRequest, "invalid_request", "text content is invalid")
+	case errors.Is(err, share.ErrInvalidEncryptedText):
+		api.writeError(w, http.StatusBadRequest, "invalid_request", "encrypted text payload is invalid")
 	default:
 		api.log.Error("request failed", "operation", operation, "error", err)
 		api.writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
@@ -418,14 +539,21 @@ type textResponse struct {
 	Content string            `json:"content"`
 }
 
+type encryptedTextResponse struct {
+	Protocol   string `json:"protocol"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
+
 type responseShare struct {
-	ID          string             `json:"id"`
-	PayloadKind domain.PayloadKind `json:"payload_kind"`
-	PrivacyMode domain.PrivacyMode `json:"privacy_mode"`
-	Text        textResponse       `json:"text"`
-	CreatedAt   string             `json:"created_at"`
-	UpdatedAt   string             `json:"updated_at"`
-	ExpiresAt   *string            `json:"expires_at"`
+	ID            string                 `json:"id"`
+	PayloadKind   domain.PayloadKind     `json:"payload_kind"`
+	PrivacyMode   domain.PrivacyMode     `json:"privacy_mode"`
+	Text          *textResponse          `json:"text,omitempty"`
+	EncryptedText *encryptedTextResponse `json:"encrypted_text,omitempty"`
+	CreatedAt     string                 `json:"created_at"`
+	UpdatedAt     string                 `json:"updated_at"`
+	ExpiresAt     *string                `json:"expires_at"`
 }
 
 type shareResponse struct {
@@ -442,9 +570,18 @@ func responseFromShare(value share.Share) responseShare {
 		ID:          value.ID.String(),
 		PayloadKind: value.PayloadKind,
 		PrivacyMode: value.PrivacyMode,
-		Text:        textResponse{Format: value.Text.Format, Content: value.Text.Content},
 		CreatedAt:   value.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:   value.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if value.Text != nil {
+		response.Text = &textResponse{Format: value.Text.Format, Content: value.Text.Content}
+	}
+	if value.EncryptedText != nil {
+		response.EncryptedText = &encryptedTextResponse{
+			Protocol:   value.EncryptedText.Protocol,
+			Nonce:      base64.RawURLEncoding.EncodeToString(value.EncryptedText.Nonce),
+			Ciphertext: base64.RawURLEncoding.EncodeToString(value.EncryptedText.Ciphertext),
+		}
 	}
 	if value.ExpiresAt != nil {
 		expiresAt := value.ExpiresAt.UTC().Format(time.RFC3339Nano)

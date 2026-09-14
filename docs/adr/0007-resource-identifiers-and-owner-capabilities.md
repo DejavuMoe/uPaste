@@ -17,6 +17,6 @@ Persist only `SHA-256(canonical_owner_token)`. V1 has no server-side pepper or H
 
 ## Consequences
 
-A 128-bit random ID is compact while enumeration remains infeasible when combined with rate controls. IDs stay opaque, so a future generator can increase entropy without changing existing IDs. The independent 256-bit token is the sole management security boundary; its uniform search space makes offline brute force infeasible even if SHA-256 verifiers leak.
+A 128-bit random ID is compact while practical random enumeration remains infeasible; rate controls remain required future abuse protection. IDs stay opaque, so a future generator can increase entropy without changing existing IDs. The independent 256-bit token is the sole management security boundary; its uniform search space makes offline brute force infeasible even if SHA-256 verifiers leak.
 
 Removing HMAC avoids key distribution, loss, rotation, and recovery failure modes. It does not protect weak or user-chosen tokens, so the Phase 1 implementation exposes only secure generation and canonical parsing, never custom token generation. Raw tokens remain unrecoverable server-side; loss by the owner means management access cannot be restored. A keyed verifier remains a compatible future migration if a concrete threat requirement justifies it.
