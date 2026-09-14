@@ -2,13 +2,13 @@
 
 uPaste is a new self-hosted application for sharing text and files. Security, reliability, and simple single-server operation are its priorities.
 
-## Phase 5 status
+## Phase 6 status
 
-Phase 5 adds asynchronous expired-data purge, local-object reconciliation, trusted-proxy-aware process-local rate limits, and bounded File-transfer concurrency. Existing Standard/Encrypted Text and Standard File contracts remain unchanged.
+Phase 6 freezes the frontend product contract, information architecture, wireframes, interaction state matrix, visual language, and implementation boundaries ([FRONTEND_PRODUCT_SPEC](docs/FRONTEND_PRODUCT_SPEC.md), [FRONTEND_INTERACTION_SPEC](docs/FRONTEND_INTERACTION_SPEC.md), [FRONTEND_VISUAL_SPEC](docs/FRONTEND_VISUAL_SPEC.md), and [ADR 0013](docs/adr/0013-frontend-product-architecture.md)). No production runtime code was changed.
 
 > These application-layer controls target private self-hosted deployments and complement trusted reverse-proxy/network protections; they do not provide DDoS resistance or make uPaste a public multi-tenant Pastebin. There is no malware scanning, accounts, moderation, distributed limiter, or storage quota.
 
-Encrypted Files, product UI, search/listing, and deployment packaging are not implemented.
+Encrypted Files, production React UI implementation, search/listing, and deployment packaging are not implemented.
 
 ## Quick start
 
@@ -33,6 +33,6 @@ The backend creates `./data/upaste.db` by default. Configuration precedence is C
 
 The resolved data directory is normalized to an absolute clean path. Binding beyond loopback must be an explicit operator choice.
 
-See the [Phase 4 API](docs/API.md), [development guide](docs/DEVELOPMENT.md), [product scope](docs/PRODUCT.md), [architecture](docs/ARCHITECTURE.md), and [security invariants](docs/SECURITY.md).
+See the [frontend product spec](docs/FRONTEND_PRODUCT_SPEC.md), [interaction spec](docs/FRONTEND_INTERACTION_SPEC.md), [visual spec](docs/FRONTEND_VISUAL_SPEC.md), [Phase 4 API](docs/API.md), [development guide](docs/DEVELOPMENT.md), [product scope](docs/PRODUCT.md), [architecture](docs/ARCHITECTURE.md), and [security invariants](docs/SECURITY.md).
 
 No license has been selected.

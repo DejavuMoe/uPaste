@@ -59,6 +59,10 @@ The same binary already exposes separate loopback listeners for the application/
 
 Maintenance runs once asynchronously after both listeners start and then every 15 minutes. It purges at most 2048 expired rows in 256-row transactions, then snapshots all remaining File references and scans Local objects once. Objects/stages require a 30-minute grace, longer than the 10-minute File deadline; unknown filesystem entries are reported, not removed.
 
-## Not implemented in Phase 5
+## Phase 6 frontend architecture freeze
 
-Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
+Phase 6 freezes the frontend product architecture, routes (`/`, `/s/:id`, `/manage/:id`), secret non-persistence, and visual language ([ADR 0013](adr/0013-frontend-product-architecture.md) and [FRONTEND_PRODUCT_SPEC](FRONTEND_PRODUCT_SPEC.md)). Production React UI implementation remains Phase 7.
+
+## Not implemented
+
+Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, production React UI implementation, Docker packaging, and deployment packaging remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.

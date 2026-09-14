@@ -33,6 +33,7 @@ These names describe behavior, not a required database enum. No lifecycle `state
 
 ## Delivery phases
 
-- **Current Phase 4:** Standard/Encrypted Text plus Standard File create, public metadata read, owner update/delete, expiration enforcement, and separated attachment-only File delivery. Raw plaintext remains available only for Standard Text; there is no product UI or rendering.
-- **Approved future direction:** expiration/object reconciliation, product UI, and deployment hardening.
-- **Out of scope now:** Encrypted Files, public listing/search, accounts, frontend product behavior, and production packaging. Features excluded above require an explicit later decision.
+- **Server Foundation (Phases 1–5.1):** Standard/Encrypted Text plus Standard File create, public metadata read, owner update/delete, expiration enforcement, separated attachment-only File delivery, local object storage, maintenance purge/reconciliation, and process-local rate limiting.
+- **Current Phase 6:** Frontend product contract, wireframes, interaction state matrix, visual design system, and implementation architecture frozen ([FRONTEND_PRODUCT_SPEC](FRONTEND_PRODUCT_SPEC.md), [FRONTEND_INTERACTION_SPEC](FRONTEND_INTERACTION_SPEC.md), [FRONTEND_VISUAL_SPEC](FRONTEND_VISUAL_SPEC.md), and [ADR 0013](adr/0013-frontend-product-architecture.md)).
+- **Approved future direction:** Phase 7 production React UI implementation and deployment hardening.
+- **Out of scope now:** Encrypted Files, public listing/search, accounts, and production packaging. Features excluded above require an explicit later decision.
