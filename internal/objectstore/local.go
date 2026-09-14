@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,7 +28,6 @@ type ReadSeekCloser interface {
 	io.Seeker
 	io.Closer
 }
-
 type Staged interface {
 	Key() string
 	Size() int64
@@ -35,7 +36,6 @@ type Staged interface {
 	Commit() error
 	Abort() error
 }
-
 type Store interface {
 	Stage(context.Context, io.Reader, int64) (Staged, error)
 	Open(string) (ReadSeekCloser, error)
@@ -46,7 +46,12 @@ type Reconciler interface {
 	Reconcile(context.Context, map[string]struct{}, time.Time) (ReconcileResult, error)
 }
 
-type Local struct{ root string }
+type Local struct {
+	root      string
+	confined  *os.Root
+	closeOnce sync.Once
+	closeErr  error
+}
 
 func OpenLocal(dataDir string) (*Local, error) {
 	root := filepath.Join(dataDir, "objects")
@@ -58,22 +63,36 @@ func OpenLocal(dataDir string) (*Local, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create object root: %w", err)
 	}
-	return &Local{root: root}, nil
+	confined, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open object root: %w", err)
+	}
+	return &Local{root: root, confined: confined}, nil
+}
+func (store *Local) Close() error {
+	store.closeOnce.Do(func() { store.closeErr = store.confined.Close() })
+	return store.closeErr
 }
 
 func (store *Local) Stage(ctx context.Context, source io.Reader, limit int64) (Staged, error) {
-	if err := store.checkRoot(); err != nil {
-		return nil, err
-	}
 	key, err := generateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generate object key: %w", err)
 	}
-	file, err := os.CreateTemp(store.root, ".stage-*")
+	var temp string
+	var file *os.File
+	for range 8 {
+		temp = ".stage-" + key + "-" + randomSuffix()
+		file, err = store.confined.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		break
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create staged object: %w", err)
 	}
-	staged := &localStaged{store: store, key: key, temp: file.Name()}
+	staged := &localStaged{store: store, key: key, temp: temp}
 	succeeded := false
 	defer func() {
 		if !succeeded {
@@ -81,9 +100,6 @@ func (store *Local) Stage(ctx context.Context, source io.Reader, limit int64) (S
 			_ = staged.Abort()
 		}
 	}()
-	if err = file.Chmod(0o600); err != nil {
-		return nil, fmt.Errorf("secure staged object: %w", err)
-	}
 	hash := sha256.New()
 	sniff := &sniffWriter{}
 	written, copyErr := io.Copy(io.MultiWriter(file, hash, sniff), io.LimitReader(&contextReader{ctx: ctx, reader: source}, limit+1))
@@ -110,14 +126,11 @@ func (store *Local) Stage(ctx context.Context, source io.Reader, limit int64) (S
 }
 
 func (store *Local) Open(key string) (ReadSeekCloser, error) {
-	if err := store.checkShard(key); err != nil {
-		return nil, err
-	}
-	path, err := store.path(key)
+	rel, err := relative(key)
 	if err != nil {
 		return nil, err
 	}
-	file, err := os.Open(path)
+	file, err := store.confined.Open(rel)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +139,7 @@ func (store *Local) Open(key string) (ReadSeekCloser, error) {
 		file.Close()
 		return nil, err
 	}
-	final, err := os.Lstat(path)
+	final, err := store.confined.Lstat(rel)
 	if err != nil || final.Mode()&os.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(opened, final) {
 		file.Close()
 		return nil, errors.New("object is not a regular file")
@@ -134,8 +147,26 @@ func (store *Local) Open(key string) (ReadSeekCloser, error) {
 	return file, nil
 }
 
+func (store *Local) Delete(key string) error {
+	rel, err := relative(key)
+	if err != nil {
+		return err
+	}
+	info, err := store.confined.Lstat(rel)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return errors.New("object is not a regular file")
+	}
+	return store.confined.Remove(rel)
+}
+
 func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{}, staleBefore time.Time) (result ReconcileResult, err error) {
-	entries, err := os.ReadDir(store.root)
+	entries, err := fs.ReadDir(store.confined.FS(), ".")
 	if err != nil {
 		return result, err
 	}
@@ -144,14 +175,13 @@ func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{
 			return result, err
 		}
 		name := entry.Name()
-		path := filepath.Join(store.root, name)
-		info, infoErr := os.Lstat(path)
+		info, infoErr := store.confined.Lstat(name)
 		if infoErr != nil {
 			return result, infoErr
 		}
 		if strings.HasPrefix(name, ".stage-") {
 			if info.Mode().IsRegular() && !info.ModTime().After(staleBefore) {
-				if err := os.Remove(path); err != nil {
+				if err := store.confined.Remove(name); err != nil {
 					return result, err
 				}
 				result.StagesDeleted++
@@ -164,7 +194,7 @@ func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{
 			result.Anomalies++
 			continue
 		}
-		children, readErr := os.ReadDir(path)
+		children, readErr := fs.ReadDir(store.confined.FS(), name)
 		if readErr != nil {
 			return result, readErr
 		}
@@ -172,8 +202,8 @@ func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
-			childPath := filepath.Join(path, child.Name())
-			childInfo, childErr := os.Lstat(childPath)
+			rel := name + "/" + child.Name()
+			childInfo, childErr := store.confined.Lstat(rel)
 			if childErr != nil {
 				return result, childErr
 			}
@@ -183,7 +213,7 @@ func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{
 				continue
 			}
 			if _, ok := referenced[key]; !ok && !childInfo.ModTime().After(staleBefore) {
-				if err := os.Remove(childPath); err != nil {
+				if err := store.confined.Remove(rel); err != nil {
 					return result, err
 				}
 				result.OrphansDeleted++
@@ -194,12 +224,12 @@ func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		path, pathErr := store.path(key)
-		if pathErr != nil {
+		rel, relErr := relative(key)
+		if relErr != nil {
 			result.MissingReferenced++
 			continue
 		}
-		info, statErr := os.Lstat(path)
+		info, statErr := store.confined.Lstat(rel)
 		if statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			result.MissingReferenced++
 		}
@@ -207,76 +237,28 @@ func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{
 	return result, nil
 }
 
-func validShard(value string) bool { return len(value) == 2 && validKey(value+strings.Repeat("0", 30)) }
-func validKey(value string) bool   { _, err := (&Local{}).path(value); return err == nil }
-
-func (store *Local) Delete(key string) error {
-	if err := store.checkShard(key); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	path, err := store.path(key)
-	if err != nil {
-		return err
-	}
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return errors.New("object is not a regular file")
-	}
-	return os.Remove(path)
-}
-
-func (store *Local) checkRoot() error {
-	info, err := os.Lstat(store.root)
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return errors.New("object root is not a directory")
-	}
-	return nil
-}
-
-func (store *Local) checkShard(key string) error {
-	if err := store.checkRoot(); err != nil {
-		return err
-	}
-	path, err := store.path(key)
-	if err != nil {
-		return err
-	}
-	info, err := os.Lstat(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return errors.New("object shard is not a directory")
-	}
-	return nil
-}
-
 func (store *Local) path(key string) (string, error) {
-	if len(key) != keyBytes*2 {
+	rel, err := relative(key)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, filepath.FromSlash(rel)), nil
+}
+func relative(key string) (string, error) {
+	if !validKey(key) {
 		return "", errors.New("invalid object key")
 	}
-	decoded, err := hex.DecodeString(key)
-	if err != nil || len(decoded) != keyBytes || hex.EncodeToString(decoded) != key {
-		return "", errors.New("invalid object key")
-	}
-	return filepath.Join(store.root, key[:2], key[2:]), nil
+	return key[:2] + "/" + key[2:], nil
+}
+func validShard(value string) bool { return len(value) == 2 && validKey(value+strings.Repeat("0", 30)) }
+func validKey(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return len(value) == keyBytes*2 && err == nil && len(decoded) == keyBytes && hex.EncodeToString(decoded) == value
 }
 
 type localStaged struct {
 	store     *Local
-	key       string
-	temp      string
+	key, temp string
 	size      int64
 	digest    [sha256.Size]byte
 	sniff     []byte
@@ -287,38 +269,34 @@ func (staged *localStaged) Key() string               { return staged.key }
 func (staged *localStaged) Size() int64               { return staged.size }
 func (staged *localStaged) SHA256() [sha256.Size]byte { return staged.digest }
 func (staged *localStaged) Sniff() []byte             { return append([]byte(nil), staged.sniff...) }
-
 func (staged *localStaged) Commit() error {
 	if staged.committed {
 		return nil
 	}
-	final, err := staged.store.path(staged.key)
+	rel, err := relative(staged.key)
 	if err != nil {
 		return err
 	}
-	shard := filepath.Dir(final)
-	if err := os.MkdirAll(shard, 0o700); err != nil {
+	shard := staged.key[:2]
+	if err := staged.store.confined.MkdirAll(shard, 0o700); err != nil {
 		return fmt.Errorf("create object shard: %w", err)
 	}
-	if err := staged.store.checkShard(staged.key); err != nil {
-		return err
-	}
-	if _, err := os.Lstat(final); !errors.Is(err, os.ErrNotExist) {
-		if err == nil {
+	if info, err := staged.store.confined.Lstat(rel); !errors.Is(err, os.ErrNotExist) {
+		if err == nil && info != nil {
 			return errors.New("object already exists")
 		}
 		return err
 	}
-	if err := os.Link(staged.temp, final); err != nil {
+	if err := staged.store.confined.Link(staged.temp, rel); err != nil {
 		return fmt.Errorf("finalize object: %w", err)
 	}
-	if err := os.Remove(staged.temp); err != nil {
-		_ = os.Remove(final)
+	if err := staged.store.confined.Remove(staged.temp); err != nil {
+		_ = staged.store.confined.Remove(rel)
 		return fmt.Errorf("remove staged object: %w", err)
 	}
 	staged.temp = ""
 	staged.committed = true
-	directory, err := os.Open(shard)
+	directory, err := staged.store.confined.Open(shard)
 	if err != nil {
 		return fmt.Errorf("open object shard: %w", err)
 	}
@@ -328,25 +306,30 @@ func (staged *localStaged) Commit() error {
 	}
 	return nil
 }
-
 func (staged *localStaged) Abort() error {
 	if staged.temp == "" {
 		return nil
 	}
-	err := os.Remove(staged.temp)
+	err := staged.store.confined.Remove(staged.temp)
 	if errors.Is(err, os.ErrNotExist) {
 		err = nil
 	}
 	staged.temp = ""
 	return err
 }
-
 func generateKey() (string, error) {
 	value := make([]byte, keyBytes)
 	if _, err := rand.Read(value); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(value), nil
+}
+func randomSuffix() string {
+	value := make([]byte, 8)
+	if _, err := rand.Read(value); err != nil {
+		return "fallback"
+	}
+	return hex.EncodeToString(value)
 }
 
 type sniffWriter struct{ bytes []byte }

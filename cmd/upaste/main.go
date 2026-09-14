@@ -68,6 +68,11 @@ func run(log *slog.Logger) (err error) {
 	if err != nil {
 		return fmt.Errorf("initialize object storage: %w", err)
 	}
+	defer func() {
+		if closeErr := store.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close object storage: %w", closeErr)
+		}
+	}()
 	shareService := share.NewWithStore(db, store, time.Now)
 	control := abuse.New(abuse.Config{Trusted: cfg.TrustedProxies})
 	appServer := newServer(cfg.Addr, newHandler(httpapi.NewWithAbuse(shareService, cfg.FileOrigin, log, control)))

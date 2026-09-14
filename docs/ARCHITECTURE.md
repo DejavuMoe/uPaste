@@ -27,7 +27,7 @@ The app listener defaults to `127.0.0.1:8080`; the independent file listener def
 
 ## Persistence foundation
 
-The database is `<data-dir>/upaste.db`; local File objects are `<data-dir>/objects/<first-two-hex>/<remaining-hex-key>`. New object directories/files use `0700`/`0600`; server-generated 16-byte hex object keys and filenames never become public filesystem paths. New data directories and database files are created with `0700` and `0600` permissions respectively; existing operator-managed permissions are not weakened. SQLite uses `modernc.org/sqlite` v1.58.0 (SQLite 3.53.4, `modernc.org/libc` v1.75.6) through `database/sql`, with no CGO or ORM.
+The database is `<data-dir>/upaste.db`; local File objects are `<data-dir>/objects/<first-two-hex>/<remaining-hex-key>`. Local storage opens this root once with Go `os.Root`; stage, finalization, reads, deletion, and reconciliation stay confined to that handle even if the pathname is later replaced. New object directories/files use `0700`/`0600`; server-generated 16-byte hex object keys and filenames never become public filesystem paths. New data directories and database files are created with `0700` and `0600` permissions respectively; existing operator-managed permissions are not weakened. SQLite uses `modernc.org/sqlite` v1.58.0 (SQLite 3.53.4, `modernc.org/libc` v1.75.6) through `database/sql`, with no CGO or ORM.
 
 Validated DSN parameters configure every physical connection:
 
@@ -61,4 +61,4 @@ Maintenance runs once asynchronously after both listeners start and then every 1
 
 ## Not implemented in Phase 5
 
-Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, rate limiting, expiration/object reconciliation, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
+Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.

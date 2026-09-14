@@ -33,7 +33,17 @@ func TestClientIP(t *testing.T) {
 func TestControlLimitsAndBounds(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	control := New(Config{Now: func() time.Time { return now }, Max: 2})
-	for count := 0; count < 5; count++ {
+	first := httptest.NewRequest("POST", "/", nil)
+	first.RemoteAddr = "198.51.100.1:1"
+	if !control.Allow(first, Create) {
+		t.Fatal("first request")
+	}
+	swept := control.lastSweep
+	now = now.Add(time.Second)
+	if !control.Allow(first, Create) || control.lastSweep != swept {
+		t.Fatal("registry swept before interval")
+	}
+	for count := 0; count < 3; count++ {
 		r := httptest.NewRequest("POST", "/", nil)
 		r.RemoteAddr = "198.51.100.1:1"
 		if !control.Allow(r, Create) {

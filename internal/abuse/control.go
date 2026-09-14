@@ -22,6 +22,7 @@ const (
 	MaxClients    = 16384
 	UploadLimit   = 4
 	DownloadLimit = 32
+	SweepInterval = time.Minute
 )
 
 type Config struct {
@@ -46,6 +47,7 @@ type Control struct {
 	uploads   chan struct{}
 	downloads chan struct{}
 	disabled  bool
+	lastSweep time.Time
 }
 
 func New(config Config) *Control {
@@ -70,15 +72,16 @@ func (control *Control) Allow(request *http.Request, kind int) bool {
 	key := RateKey(ClientIP(request.RemoteAddr, request.Header.Get("X-Forwarded-For"), control.trusted))
 	control.mu.Lock()
 	defer control.mu.Unlock()
-	for key, value := range control.clients {
-		if now.Sub(value.last) >= ClientIdleTTL {
-			delete(control.clients, key)
-		}
+	if now.Sub(control.lastSweep) >= SweepInterval {
+		control.sweep(now)
 	}
 	value := control.clients[key]
 	if value == nil {
 		if len(control.clients) >= control.max {
-			return false
+			control.sweep(now)
+			if len(control.clients) >= control.max {
+				return false
+			}
 		}
 		value = &client{last: now, limiters: [3]*rate.Limiter{
 			rate.NewLimiter(rate.Every(time.Minute/10), 5),
@@ -89,6 +92,15 @@ func (control *Control) Allow(request *http.Request, kind int) bool {
 	}
 	value.last = now
 	return control.global.AllowN(now, 1) && value.limiters[kind].AllowN(now, 1)
+}
+
+func (control *Control) sweep(now time.Time) {
+	for key, value := range control.clients {
+		if now.Sub(value.last) >= ClientIdleTTL {
+			delete(control.clients, key)
+		}
+	}
+	control.lastSweep = now
 }
 
 func (control *Control) TryUpload() bool {
