@@ -1,0 +1,41 @@
+# Threat model
+
+## Scope and trust boundaries
+
+Protected assets include Share content, owner capabilities, encryption keys, service availability, persistence integrity, and application-origin authority. Boundaries are browser-to-app, browser-to-file-origin, reverse-proxy-to-listeners, process-to-database/filesystem, operator/backup access, and third-party networks. Phase 0 exposes only `/healthz`; mitigations below are requirements for future features, not claims of implementation.
+
+Encrypted text hides plaintext from the application server when correctly used. It does **not** hide metadata the server necessarily observes: ciphertext size, timestamps, resource ID, expiration, request IP/headers, access timing, and traffic relationships. A malicious administrator can alter served JavaScript and steal future plaintext or keys; browser-delivered zero knowledge cannot prevent that.
+
+## Threat analysis
+
+| Threat | Asset and trust boundary | Attack and impact | Planned mitigation |
+|---|---|---|---|
+| Stored XSS | Application origin; stored content to viewer browser | Persisted script executes for later readers, stealing capabilities or acting as the app | Never render raw HTML; escape text; disable Markdown HTML; sanitize generated Markdown HTML; enforce restrictive CSP. |
+| Reflected XSS | Request input to app response | Crafted URL/input is reflected as executable markup | Context-aware framework escaping, no unsafe HTML sinks, CSP, and tests for reflected inputs. |
+| Markdown injection / unsafe HTML | Markdown parser/render boundary | Links, raw HTML, or malformed markup create script or deceptive content | Disable raw HTML, sanitize renderer output independently, constrain URL schemes, and keep rendering non-executable. |
+| Malicious SVG/HTML/JS/XML uploads | File origin to browser | Active content executes and attempts origin-level compromise | Separate origin and listener, default `Content-Disposition: attachment`, explicit safe-inline allowlist, CSP, and no app-origin file delivery. |
+| MIME confusion | Upload input and file response | Extension or declared type tricks browser into executing active content | Inspect bytes where feasible, distrust names/client MIME, use server-selected type, `nosniff`, and attachment by default. |
+| Path traversal | Resource ID/name to filesystem | `../`, encoding, or symlink tricks read/overwrite arbitrary files | Server-generated opaque storage names, no direct path joining from user input, canonical root checks, safe file APIs, and tests. |
+| Resource ID enumeration | Public network to Share reads | Guessing IDs reveals Standard Shares | Cryptographically random high-entropy IDs, generic failures, rate controls; IDs remain identifiers, never authorization secrets. |
+| Owner-token theft | Browser/app management boundary | Stolen capability permits deletion or other owner actions | High entropy, HTTPS, bearer header only, least-power operations, no persistence of raw token, and keyed verifier with rotation planning. |
+| Token leakage through URLs | Browser history, Referer, logs, analytics | Credential in URL propagates to third parties and infrastructure | Reject management credentials in path/query; accept only `Authorization: Bearer`; never put owner token in links. |
+| Logging leakage | Requests/errors to operators and log systems | Sensitive headers or bodies are recorded | Structured allowlisted fields only; never log bodies, Authorization, passwords, tokens, keys, or encrypted-share plaintext; test redaction paths. |
+| Database theft | Filesystem/backup to attacker | Standard content, ciphertext, metadata, and token verifier records are exposed | Least filesystem privilege, protected backups, keyed HMAC so verifier database alone cannot validate guesses offline, and documented metadata exposure. |
+| Malicious server administrator | Host/operator to process, files, and served frontend | Reads Standard content/metadata or modifies frontend to capture decrypted text | Encrypted mode protects stored plaintext only; disclose limits, secure/reproducible releases, TLS/integrity operations. It cannot protect against malicious JavaScript served by that administrator. |
+| Brute force | Public network to IDs/tokens | Repeated guesses discover Shares or capabilities | Sufficient entropy, constant-time verifier comparison, rate limiting, generic responses, and monitoring without sensitive logs. |
+| Upload/storage abuse | Anonymous client to disk | Fills disk, stores prohibited payloads, or creates excessive objects | Strict per-request/file limits, quotas or rate controls, expiration policy, capacity monitoring, atomic cleanup, and fail closed when capacity is exhausted. |
+| Request flooding / DoS | Public network to listeners | Connections or expensive requests exhaust CPU, memory, descriptors | HTTP timeouts, body/connection limits, reverse-proxy limits, bounded concurrency where measured, and operational monitoring. |
+| Oversized request bodies | Client to parser/memory/disk | Unbounded body causes memory or storage exhaustion | `http.MaxBytesReader` before parsing, endpoint-specific limits, streaming where appropriate, and cleanup of partial writes. |
+| Decompression/resource bombs | Uploaded/encoded data to processors | Tiny input expands or consumes excessive parser resources | Do not auto-extract archives; bound compressed and expanded input/time for any future processing; reject unsupported content encodings. |
+| CSRF | Third-party site to management API | Browser is induced to perform owner action | No auth cookies; bearer token in an explicit header; same-origin API; validate Origin on sensitive browser requests where applicable. |
+| CORS mistakes | Foreign origin to API | Permissive policy exposes responses or enables credential use | Send no permissive CORS by default; explicit narrow allowlist only after a documented use case; never reflect arbitrary origins. |
+| SSRF | User input to server outbound network | Server fetch reaches metadata/internal services | No URL fetching or server-side previews; avoid outbound fetch features. If scope changes, use strict destination and redirect controls. |
+| Unsafe redirects | User-controlled target to browser | Open redirect enables phishing or leaks fragment/query data | Avoid user-controlled redirects; permit only validated local paths or explicit origins; never forward capabilities. |
+| Reverse-proxy trust | Proxy to loopback listeners | Misrouting exposes file content on app origin or bypasses scheme/client controls | Separate listeners and origins, bind loopback by default, explicit proxy routes, TLS at trusted proxy, and deployment tests. |
+| Spoofed forwarded headers | Client/proxy to app | Forged IP/proto/host bypasses controls or poisons links/logs | Ignore forwarded headers unless request comes from configured trusted proxies; do not derive security separation solely from `Host`. |
+| Stale/expired access | Clock/database to read path | Content remains readable after expiration or deletion | Every access atomically checks lifecycle and `expires_at`; deny immediately independent of cleanup; use server time and test boundary conditions. |
+| Cleanup failures | Database/object lifecycle boundary | Purged metadata and files diverge, leaking content or consuming disk | Inaccessibility is enforced in read path first; idempotent retryable cleanup, reconciliation, and alerts; backup retention documented separately. |
+
+## Residual risks
+
+Traffic analysis and server-visible metadata remain. Availability cannot be guaranteed against an attacker with enough resources. Host compromise defeats Standard privacy and can compromise future browser sessions. Operational backup deletion is controlled by deployers, not the Share lifecycle engine.

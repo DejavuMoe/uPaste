@@ -1,0 +1,29 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Dependencies and build output
+node_modules/
+web/dist/
+/upaste
+*.test
+coverage.out
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+data/
+uploads/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+.DS_Store
