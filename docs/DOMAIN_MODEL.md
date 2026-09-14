@@ -29,4 +29,4 @@ Payload columns are deliberately not frozen: text body/ciphertext belongs to the
 
 ## Current implementation
 
-No domain types, persistence, or operations exist in Phase 0.1. This document is a contract for later implementation.
+Phase 1 implements closed Go types and parsers for payload kind, privacy mode, and text format; explicit payload/privacy compatibility; and a caller-clocked expiration helper where `now == expires_at` is expired. It also implements the identifier/capability primitives and the constrained metadata schema above. No Share content model, persistence operation, lifecycle state, or CRUD API exists yet.

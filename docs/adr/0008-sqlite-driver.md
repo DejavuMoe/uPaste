@@ -1,6 +1,6 @@
 # ADR 0008: SQLite driver
 
-- Status: Accepted direction; dependency deferred to Phase 1
+- Status: Accepted; implemented in Phase 1
 - Date: 2026-09-14
 
 ## Context
@@ -9,19 +9,25 @@ uPaste targets a single ordinary Linux server and uses explicit SQL through `dat
 
 ## Decision
 
-Use `modernc.org/sqlite` for the first SQLite implementation. It integrates with `database/sql`, requires no CGO, simplifies Linux binary builds and cross-compilation, and fits the single-server self-hosted model. Keep explicit SQL migrations and do not introduce an ORM.
+Use `modernc.org/sqlite` with `database/sql`, explicit SQL migrations, and no ORM. Phase 1 pins v1.58.0, the latest stable tag returned by Go module tooling at implementation time. Although upstream's changelog described v1.59.0, the tag was not published (`go list -m modernc.org/sqlite@latest` returned v1.58.0 and the module proxy reported v1.59.0 as an unknown revision), so no untagged code was selected.
 
-Phase 1 will pin and verify the exact dependency version. It must arrange for these settings on **every physical SQLite connection**, not execute them once on an arbitrary pooled connection:
+v1.58.0 bundles SQLite 3.53.4 and requires `modernc.org/libc` v1.75.6 exactly; the resolved dependency graph matches that requirement. It supports the validated shorthand and security DSN parameters used here.
+
+Every physical connection is opened with this policy:
 
 ```text
-journal_mode = WAL
-foreign_keys = ON
-busy_timeout = 5000 ms
-synchronous = NORMAL
+_busy_timeout=5000
+_defensive=1
+_dqs=0
+_foreign_keys=ON
+_journal_mode=WAL
+_synchronous=NORMAL
 ```
 
-Phase 1 will also verify whether the selected driver/version supports SQLite defensive mode and enable it when supported. Shared-cache mode stays disabled absent a demonstrated requirement. No speculative page-cache tuning is approved.
+The driver applies these parameters when each connection opens. Integration tests hold multiple pooled physical connections concurrently and verify their effective PRAGMAs, disabled double-quoted-string fallback, and defensive mode behavior rather than inspecting only the DSN.
+
+The `database/sql` pool allows at most four open and four idle connections, with no arbitrary connection lifetime. Shared cache, loadable extensions, writable schema, mmap/cache/auto-vacuum tuning, and OFD locking are not enabled. The pool size is a conservative single-server default, not a benchmark-derived scalability claim.
 
 ## Consequences
 
-Builds avoid a host C compiler and are easier to reproduce and cross-compile. The project accepts a larger pure-Go dependency and must track its SQLite compatibility, behavior, and security updates. Connection initialization needs explicit tests because `database/sql` may create multiple physical connections. This ADR adds no dependency or database code in Phase 0.1.
+Builds require no CGO, host C compiler, or system SQLite and are easier to reproduce and cross-compile. The project accepts a sizable pure-Go dependency graph and must track its SQLite compatibility and security updates. Connection-level hardening is explicit and tested. OFD locking may be reviewed separately after its portability and operational behavior have sufficient evidence.

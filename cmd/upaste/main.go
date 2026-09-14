@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/DejavuMoe/uPaste/internal/config"
+	"github.com/DejavuMoe/uPaste/internal/database"
 )
 
 func newHandler() http.Handler {
@@ -22,12 +25,33 @@ func newHandler() http.Handler {
 }
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address")
-	flag.Parse()
-
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("application failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger) (err error) {
+	cfg, err := config.Parse(os.Args[1:], os.LookupEnv)
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	db, err := database.Open(ctx, cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	defer func() {
+		if closeErr := db.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close database: %w", closeErr)
+		}
+	}()
+
 	server := &http.Server{
-		Addr:              *addr,
+		Addr:              cfg.Addr,
 		Handler:           newHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -35,8 +59,6 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -48,7 +70,7 @@ func main() {
 
 	log.Info("server listening", "address", server.Addr)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("server failed", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("serve HTTP: %w", err)
 	}
+	return nil
 }

@@ -6,7 +6,7 @@ These are mandatory design constraints. Later implementation must fail closed wh
 2. Read access and management access are separate concepts.
 3. Management credentials never appear in query parameters, pathnames, logs, analytics, or Referer-visible URLs.
 4. Management operations use `Authorization: Bearer <owner-token>`.
-5. Raw owner tokens are never persisted server-side. V1 persists only `SHA-256(canonical_owner_token)` and eventually compares verifiers in constant time.
+5. Raw owner tokens are never persisted server-side. V1 persists only `SHA-256(canonical_owner_token)` and compares valid-form candidates in constant time.
 6. Standard content may be visible to the server.
 7. Encrypted Text Share content is zero-knowledge with respect to the application server. V1 File Shares are Standard only; encrypted files are not implied by this design.
 8. Encrypted text is encrypted in the browser. The server stores ciphertext and never receives plaintext. The decryption key lives in the URL fragment and is never intentionally transmitted to the server.
@@ -27,7 +27,9 @@ These are mandatory design constraints. Later implementation must fail closed wh
 - A public Share ID is generated from 16 independent `crypto/rand` bytes (128 bits) and encoded with unpadded base64url, producing 22 URL-safe characters. It is opaque and never sequential or derived from timestamps/hosts. It grants no authority.
 - An owner capability is generated independently from 32 `crypto/rand` bytes (256 bits). Its canonical shape is `up_o1_<base64url-32-random-bytes>` with no base64 padding. The visible `up_o1_` purpose/version prefix is not secret; the random portion is the security boundary.
 - V1 stores `SHA-256(canonical_owner_token)`, not the token. A server-side pepper/HMAC key is intentionally omitted: exhaustive attack against a uniform 256-bit token is infeasible, while another critical secret would create key-loss, rotation, and recovery failure modes. A keyed verifier can be introduced if evidence changes this tradeoff.
-- Verification will use constant-time comparison. Share ID and owner token generation are independent.
+- Verification uses constant-time digest comparison after canonical candidate parsing. Share ID and owner token generation are independent.
+
+Phase 1 implements these primitives but no management endpoint or persisted owner-token flow. Its SQLite connections enable foreign keys, WAL, a five-second busy timeout, NORMAL synchronization, defensive mode, and disabled double-quoted-string fallback on every physical connection. The metadata schema constrains owner verifiers to 32-byte BLOBs.
 
 Content encryption will use Web Crypto AES-GCM. Exact encrypted-text wire encoding, CSP, and upload policy still require later review. Encrypted files require a separate design covering streaming, bounded memory, authenticated chunking, resumability, integrity, and key handling.
 

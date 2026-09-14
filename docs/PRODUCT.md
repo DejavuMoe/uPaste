@@ -33,6 +33,6 @@ These names describe behavior, not a required database enum. No lifecycle `state
 
 ## Delivery phases
 
-- **Current Phase 0.1:** health endpoint, frontend shell, tooling, CI, and hardened design contracts.
-- **Approved future direction:** the V1 Share behavior above, SQLite/filesystem persistence, capability management, encrypted text, and separated Standard file delivery.
-- **Out of scope now:** all product operations and production packaging. Features excluded above require an explicit later decision.
+- **Current Phase 1:** domain, identifier/capability, configuration, hardened SQLite, metadata schema, and migration foundations plus the existing health endpoint and frontend shell.
+- **Approved future direction:** Share CRUD and payload persistence, capability-authorized management, encrypted text, and separated Standard file delivery.
+- **Out of scope now:** all Share content operations and production packaging. Features excluded above require an explicit later decision.
