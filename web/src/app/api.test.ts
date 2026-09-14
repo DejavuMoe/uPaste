@@ -5,6 +5,7 @@ import {
   createStandardText,
   createEncryptedText,
   createFile,
+  getShare,
 } from './api';
 
 describe('api client', () => {
@@ -292,6 +293,119 @@ describe('api client', () => {
       await expect(createFile(dummyFile, null, undefined, controller.signal)).rejects.toThrow(
         /aborted/i,
       );
+    });
+  });
+
+  describe('getShare', () => {
+    it('fetches share by ID with GET and returns parsed response', async () => {
+      const mockResponse = {
+        share: {
+          id: 'test-share-id',
+          payload_kind: 'TEXT' as const,
+          privacy_mode: 'STANDARD' as const,
+          created_at: '2026-09-14T12:00:00Z',
+          updated_at: '2026-09-14T12:00:00Z',
+          expires_at: null,
+          text: {
+            format: 'PLAIN' as const,
+            content: 'Hello, uPaste!',
+          },
+        },
+      };
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify(mockResponse),
+      });
+
+      const res = await getShare('test-share-id');
+      expect(res).toEqual(mockResponse);
+      expect(fetch).toHaveBeenCalledWith('/api/v1/shares/test-share-id', {
+        method: 'GET',
+        signal: undefined,
+      });
+    });
+
+    it('propagates abort signal to fetch', async () => {
+      const controller = new AbortController();
+      globalThis.fetch = vi.fn().mockImplementation((_url, options) => {
+        if (options?.signal?.aborted) {
+          return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => JSON.stringify({ share: { id: 'x' } }),
+        });
+      });
+
+      controller.abort();
+      await expect(getShare('test-share-id', controller.signal)).rejects.toThrow('aborted');
+    });
+
+    it('throws ApiError with status 404 for missing share', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        text: async () =>
+          JSON.stringify({
+            error: { code: 'not_found', message: 'share not found' },
+          }),
+      });
+
+      try {
+        await getShare('missing-id');
+        expect.unreachable('Should have thrown');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect(err.status).toBe(404);
+        expect(err.code).toBe('not_found');
+        expect(err.message).toBe('share not found');
+      }
+    });
+
+    it('throws ApiError with status 410 for expired share', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 410,
+        headers: new Headers(),
+        text: async () =>
+          JSON.stringify({
+            error: { code: 'expired', message: 'share has expired' },
+          }),
+      });
+
+      try {
+        await getShare('expired-id');
+        expect.unreachable('Should have thrown');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect(err.status).toBe(410);
+        expect(err.code).toBe('expired');
+      }
+    });
+
+    it('throws ApiError with status 429 and retryAfterSeconds when rate limited', async () => {
+      const headers = new Headers();
+      headers.set('Retry-After', '45');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers,
+        text: async () =>
+          JSON.stringify({
+            error: { code: 'rate_limit_exceeded', message: 'Rate limit exceeded' },
+          }),
+      });
+
+      try {
+        await getShare('limited-id');
+        expect.unreachable('Should have thrown');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect(err.status).toBe(429);
+        expect(err.retryAfterSeconds).toBe(45);
+      }
     });
   });
 });

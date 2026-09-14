@@ -59,6 +59,10 @@ export interface CreateShareResponse {
   owner_token: string
 }
 
+export interface GetShareResponse {
+  share: ShareMetadata
+}
+
 export interface ApiErrorResponse {
   error: {
     code: string

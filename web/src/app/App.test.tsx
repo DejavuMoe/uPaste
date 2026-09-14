@@ -44,13 +44,12 @@ describe('App routing, titles, & security', () => {
     expect(screen.getByPlaceholderText(/paste or type content here/i)).toBeInTheDocument();
   });
 
-  it('renders ShareRoute shell on /s/:id route with title "Share · uPaste"', () => {
+  it('renders ShareRoute on /s/:id route with title "Share · uPaste"', () => {
     renderRoute('/s/test-share-id-123');
 
     expect(document.title).toBe('Share · uPaste');
-    expect(screen.getByRole('heading', { level: 1, name: /share viewer/i })).toBeInTheDocument();
-    expect(screen.getByText('test-share-id-123')).toBeInTheDocument();
-    expect(screen.getByText('Share viewer is not available in this build.')).toBeInTheDocument();
+    expect(screen.getByText('Loading share…')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'New share' })).toBeInTheDocument();
 
     // Internal Phase labels must NOT be exposed
     expect(document.body.textContent).not.toMatch(/Phase 7[ABC]/);

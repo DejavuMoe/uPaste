@@ -3,6 +3,7 @@ import type {
   CreateFileMetadata,
   CreateShareResponse,
   CreateStandardTextRequest,
+  GetShareResponse,
   UploadProgress,
 } from './types'
 
@@ -89,6 +90,17 @@ export async function createEncryptedText(
     signal,
   })
   return handleResponse<CreateShareResponse>(res)
+}
+
+export async function getShare(
+  id: string,
+  signal?: AbortSignal,
+): Promise<GetShareResponse> {
+  const res = await fetch(`/api/v1/shares/${encodeURIComponent(id)}`, {
+    method: 'GET',
+    signal,
+  })
+  return handleResponse<GetShareResponse>(res)
 }
 
 export function createFile(
