@@ -2,7 +2,7 @@
 
 ## Prerequisites and pinned tools
 
-Install mise and Docker. The repository pins Go 1.27.1, Node.js 24.21.0, and pnpm 10.34.5 in `mise.toml`; `web/package.json` also pins pnpm. Docker is inspected as a target deployment tool but is not used in Phase 0.
+Install mise and Docker. The repository pins Go 1.27.1, Node.js 24.21.0, and pnpm 10.34.5 in `mise.toml`; `web/package.json` also pins pnpm. Docker is inspected as a target deployment tool but is not used in Phase 0.1.
 
 ```sh
 mise install
@@ -15,8 +15,8 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 
 | Command | Purpose |
 |---|---|
-| `make format` | Format Go source. |
-| `make check` | Verify Go formatting, run `go vet`, and strict TypeScript checking. |
+| `make format` | Format all project-owned Go source. |
+| `make check` | Fail on unformatted project Go source, run `go vet`, and strict TypeScript checking. |
 | `make test` | Run Go tests. |
 | `make build` | Build the Go executable and production frontend bundle. |
 | `make dev-backend` | Run the API on `127.0.0.1:8080`. Override with `-addr` via direct `go run` when needed. |
@@ -30,8 +30,12 @@ Generated `upaste`, `web/dist`, dependencies, runtime databases, uploaded data, 
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. No other application endpoint exists in Phase 0.
+`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. No other application endpoint exists in Phase 0.1.
+
+## Go formatting scope
+
+`scripts/gofmt` discovers Go files across the repository, including future `internal/` packages. It excludes dependency directories (`vendor/` and `node_modules/`), directories named `generated`, and files carrying Go's standard `// Code generated ... DO NOT EDIT.` marker. Both `make check` and CI call its check mode, which lists unformatted files and exits non-zero; `make format` calls its write mode over the same file set.
 
 ## CI
 
-CI repeats formatting, vet, Go tests/build, a frozen pnpm install, TypeScript check, and frontend build. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
+CI repeats the same project-wide formatting check, vet, Go tests/build, a frozen pnpm install, TypeScript check, and frontend build. Action references are immutable SHAs annotated with their upstream major tag in the workflow.

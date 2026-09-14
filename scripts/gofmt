@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+files() {
+	find . -type f -name '*.go' \
+		-not -path './.git/*' \
+		-not -path '*/node_modules/*' \
+		-not -path '*/vendor/*' \
+		-not -path '*/generated/*' \
+		-exec sh -c '
+			for file do
+				grep -q "^// Code generated .* DO NOT EDIT\\.$" "$file" || printf "%s\\0" "$file"
+			done
+		' sh {} +
+}
+
+case "${1:-}" in
+	write)
+		files | xargs -0 -r gofmt -w
+		;;
+	check)
+		unformatted=$(files | xargs -0 -r gofmt -l)
+		if [ -n "$unformatted" ]; then
+			printf 'Go files need formatting:\n%s\n' "$unformatted" >&2
+			exit 1
+		fi
+		;;
+	*)
+		echo "usage: $0 {write|check}" >&2
+		exit 2
+		;;
+esac

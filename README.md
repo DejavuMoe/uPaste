@@ -2,9 +2,9 @@
 
 uPaste is a new self-hosted application for sharing text and files. Security, reliability, and simple single-server operation are its priorities.
 
-## Phase 0 status
+## Phase 0.1 status
 
-Phase 0 provides only the project foundation: a Go HTTP service with `GET /healthz`, a minimal React shell, developer tooling, CI, and architecture/security documentation. Share CRUD, persistence, uploads, encryption, authorization, rate limiting, and production UI are not implemented.
+Phase 0.1 provides only the hardened project foundation: a Go HTTP service with `GET /healthz`, a minimal React shell, developer tooling, CI, and frozen architecture/security contracts. Share CRUD, persistence, uploads, encryption, authorization, rate limiting, and production UI are not implemented.
 
 ## Quick start
 

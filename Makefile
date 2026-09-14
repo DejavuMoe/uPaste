@@ -1,10 +1,10 @@
 .PHONY: format check test build dev-backend dev-frontend install
 
 format:
-	mise exec -- gofmt -w cmd
+	mise exec -- ./scripts/gofmt write
 
 check:
-	mise exec -- gofmt -d cmd
+	mise exec -- ./scripts/gofmt check
 	mise exec -- go vet ./...
 	mise exec -- pnpm --dir web check
 

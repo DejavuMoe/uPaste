@@ -6,9 +6,9 @@ These are mandatory design constraints. Later implementation must fail closed wh
 2. Read access and management access are separate concepts.
 3. Management credentials never appear in query parameters, pathnames, logs, analytics, or Referer-visible URLs.
 4. Management operations use `Authorization: Bearer <owner-token>`.
-5. Raw owner tokens are never persisted server-side; a keyed cryptographic hash/HMAC verifier is planned.
+5. Raw owner tokens are never persisted server-side. V1 persists only `SHA-256(canonical_owner_token)` and eventually compares verifiers in constant time.
 6. Standard content may be visible to the server.
-7. Encrypted content is zero-knowledge with respect to the application server.
+7. Encrypted Text Share content is zero-knowledge with respect to the application server. V1 File Shares are Standard only; encrypted files are not implied by this design.
 8. Encrypted text is encrypted in the browser. The server stores ciphertext and never receives plaintext. The decryption key lives in the URL fragment and is never intentionally transmitted to the server.
 9. Markdown raw HTML is disabled.
 10. Any future Markdown HTML output also passes through sanitization as defense in depth.
@@ -22,7 +22,14 @@ These are mandatory design constraints. Later implementation must fail closed wh
 18. The API is same-origin by default; permissive CORS is disabled.
 19. Security-sensitive defaults fail closed.
 
-Future resource IDs and owner tokens must be generated with a cryptographically secure RNG. Content encryption will use Web Crypto AES-GCM. Exact encodings, sizes, HMAC construction, CSP, and upload policy will be specified and tested before those features ship.
+## Identifier and capability primitives
+
+- A public Share ID is generated from 16 independent `crypto/rand` bytes (128 bits) and encoded with unpadded base64url, producing 22 URL-safe characters. It is opaque and never sequential or derived from timestamps/hosts. It grants no authority.
+- An owner capability is generated independently from 32 `crypto/rand` bytes (256 bits). Its canonical shape is `up_o1_<base64url-32-random-bytes>` with no base64 padding. The visible `up_o1_` purpose/version prefix is not secret; the random portion is the security boundary.
+- V1 stores `SHA-256(canonical_owner_token)`, not the token. A server-side pepper/HMAC key is intentionally omitted: exhaustive attack against a uniform 256-bit token is infeasible, while another critical secret would create key-loss, rotation, and recovery failure modes. A keyed verifier can be introduced if evidence changes this tradeoff.
+- Verification will use constant-time comparison. Share ID and owner token generation are independent.
+
+Content encryption will use Web Crypto AES-GCM. Exact encrypted-text wire encoding, CSP, and upload policy still require later review. Encrypted files require a separate design covering streaming, bounded memory, authenticated chunking, resumability, integrity, and key handling.
 
 ## Repository secret policy
 
