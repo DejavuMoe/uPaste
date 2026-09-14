@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
+import { createBrowserRouter, Navigate, Outlet, Route, RouterProvider, Routes } from 'react-router';
 import { ThemeProvider } from './theme';
 import { OwnerCapabilityProvider } from './ownerCapabilities';
 import { AppHeader } from '../components/AppHeader';
@@ -18,19 +18,25 @@ export const AppRoutes: React.FC = () => {
   );
 };
 
-export const App: React.FC = () => {
-  return (
-    <ThemeProvider>
-      <OwnerCapabilityProvider>
-        <BrowserRouter>
-          <div className="app-layout">
-            <AppHeader />
-            <AppRoutes />
-          </div>
-        </BrowserRouter>
-      </OwnerCapabilityProvider>
-    </ThemeProvider>
-  );
-};
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <div className="app-layout"><AppHeader /><Outlet /></div>,
+    children: [
+      { index: true, element: <CreatePage /> },
+      { path: 's/:id', element: <ShareRoute /> },
+      { path: 'manage/:id', element: <ManageRoute /> },
+      { path: '*', element: <Navigate to="/" replace /> },
+    ],
+  },
+]);
+
+export const App: React.FC = () => (
+  <ThemeProvider>
+    <OwnerCapabilityProvider>
+      <RouterProvider router={router} />
+    </OwnerCapabilityProvider>
+  </ThemeProvider>
+);
 
 export default App;

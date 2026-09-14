@@ -1226,6 +1226,12 @@ body {
 /* --------------------------------------------------------------------------
    Reduced Motion
    -------------------------------------------------------------------------- */
+.dialog-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: var(--space-4); background: rgb(15 23 42 / 45%); }
+.dialog { width: min(100%, 32rem); padding: var(--space-6); border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-surface-elevated); box-shadow: 0 4px 12px rgb(0 0 0 / 15%); }
+.dialog > .btn { margin: var(--space-2) var(--space-2) 0 0; }
+.manage-card label { display: grid; gap: var(--space-2); margin: var(--space-4) 0; }
+.manage-card textarea { min-height: 20rem; width: 100%; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

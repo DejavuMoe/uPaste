@@ -6,6 +6,8 @@ import {
   createEncryptedText,
   createFile,
   getShare,
+  updateShare,
+  deleteShare,
 } from './api';
 
 describe('api client', () => {
@@ -293,6 +295,30 @@ describe('api client', () => {
       await expect(createFile(dummyFile, null, undefined, controller.signal)).rejects.toThrow(
         /aborted/i,
       );
+    });
+  });
+
+  describe('owner mutations', () => {
+    it('sends PATCH with bearer authorization and only requested fields', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ share: { id: 'share-id' } }) });
+      await updateShare('share-id', 'up_o1_test', { expires_at: null });
+      const [url, options] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/shares/share-id');
+      expect(options.headers.Authorization).toBe('Bearer up_o1_test');
+      expect(JSON.parse(options.body)).toEqual({ expires_at: null });
+      expect(options.body).not.toContain('up_o1_test');
+    });
+
+    it('handles DELETE 204 without parsing a response body and propagates signal', async () => {
+      const controller = new AbortController();
+      globalThis.fetch = vi.fn().mockResolvedValue({ status: 204 });
+      await expect(deleteShare('share-id', 'up_o1_test', controller.signal)).resolves.toBeUndefined();
+      expect(fetch).toHaveBeenCalledWith('/api/v1/shares/share-id', { method: 'DELETE', headers: { Authorization: 'Bearer up_o1_test' }, signal: controller.signal });
+    });
+
+    it.each([401, 404, 410, 500])('parses owner mutation status %i', async (status) => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status, headers: new Headers(), text: async () => JSON.stringify({ error: { code: 'x', message: 'x' } }) });
+      await expect(updateShare('share-id', 'up_o1_test', { expires_at: null })).rejects.toMatchObject({ status });
     });
   });
 

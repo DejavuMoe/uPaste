@@ -59,9 +59,7 @@ describe('App routing, titles, & security', () => {
     renderRoute('/manage/test-manage-id-456');
 
     expect(document.title).toBe('Manage share · uPaste');
-    expect(screen.getByRole('heading', { level: 1, name: /manage share/i })).toBeInTheDocument();
-    expect(screen.getByText('test-manage-id-456')).toBeInTheDocument();
-    expect(screen.getByText('Management editing is not available in this build.')).toBeInTheDocument();
+    expect(screen.getByText('Loading share…')).toBeInTheDocument();
 
     // Internal Phase labels must NOT be exposed
     expect(document.body.textContent).not.toMatch(/Phase 7[ABC]/);
@@ -93,14 +91,11 @@ describe('App routing, titles, & security', () => {
     expect(document.title).not.toContain('up_e1');
   });
 
-  it('displays neutral capability status in ManageRoute and does NOT display token characters', () => {
+  it('does not display in-memory capability characters while management loads', () => {
     renderRoute('/manage/share-with-cap', (caps) => {
       caps.remember('share-with-cap', 'up_o1_secret_capability_token');
     });
 
-    expect(screen.getByText('Management token available for this session.')).toBeInTheDocument();
-
-    // MUST NOT display any portion of the token (e.g. up_o1_•••• or raw)
     expect(document.body.textContent).not.toContain('up_o1_secret_capability_token');
     expect(document.body.textContent).not.toContain('••••');
   });

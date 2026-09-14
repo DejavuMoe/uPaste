@@ -63,6 +63,16 @@ export interface GetShareResponse {
   share: ShareMetadata
 }
 
+export type SharePatch = {
+  text?: { format: TextFormat; content: string }
+  encrypted_text?: { protocol: 'UPASTE_AES_GCM_V1'; nonce: string; ciphertext: string }
+  expires_at?: string | null
+}
+
+export interface UpdateShareResponse {
+  share: ShareMetadata
+}
+
 export interface ApiErrorResponse {
   error: {
     code: string

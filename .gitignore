@@ -11,6 +11,8 @@ secrets/
 # Dependencies and build output
 node_modules/
 web/dist/
+web/playwright-report/
+web/test-results/
 /upaste
 *.test
 coverage.out

@@ -6,12 +6,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:8080',
-      '/raw': 'http://127.0.0.1:8080',
+      '/api': process.env.VITE_API_ORIGIN || 'http://127.0.0.1:8080',
+      '/raw': process.env.VITE_API_ORIGIN || 'http://127.0.0.1:8080',
     },
   },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    exclude: ['e2e/**', 'node_modules/**'],
   },
 })

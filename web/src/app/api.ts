@@ -5,6 +5,8 @@ import type {
   CreateStandardTextRequest,
   GetShareResponse,
   UploadProgress,
+  SharePatch,
+  UpdateShareResponse,
 } from './types'
 
 export class ApiError extends Error {
@@ -101,6 +103,31 @@ export async function getShare(
     signal,
   })
   return handleResponse<GetShareResponse>(res)
+}
+
+export async function updateShare(
+  id: string,
+  ownerToken: string,
+  patch: SharePatch,
+  signal?: AbortSignal,
+): Promise<UpdateShareResponse> {
+  const res = await fetch(`/api/v1/shares/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ownerToken}` },
+    body: JSON.stringify(patch),
+    signal,
+  })
+  return handleResponse<UpdateShareResponse>(res)
+}
+
+export async function deleteShare(id: string, ownerToken: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`/api/v1/shares/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${ownerToken}` },
+    signal,
+  })
+  if (res.status === 204) return
+  await handleResponse<void>(res)
 }
 
 export function createFile(
