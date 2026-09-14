@@ -65,7 +65,7 @@ func TestExpiredShareCannotBeRevived(t *testing.T) {
 	}
 	now = expires
 	future := now.Add(time.Hour)
-	_, err = service.Update(context.Background(), created.ID, token.String(), Patch{ExpirationSet: true, ExpiresAt: &future})
+	_, err = service.Update(context.Background(), created.ID, token.Reveal(), Patch{ExpirationSet: true, ExpiresAt: &future})
 	if !errors.Is(err, ErrExpired) {
 		t.Fatalf("Update error = %v, want ErrExpired", err)
 	}

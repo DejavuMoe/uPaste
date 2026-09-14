@@ -52,7 +52,7 @@ Content-Encoding: identity
 }
 ```
 
-Every field is required. Text format is `PLAIN`, `SOURCE`, or `MARKDOWN`. Content is preserved without trimming and must contain 1–1,048,576 UTF-8 bytes; whitespace-only content is valid. The wire limit is independent because JSON escaping and structure also consume bytes. `expires_at` is either explicit `null` or a timestamp strictly after server time once normalized. Unknown fields and trailing JSON values are rejected.
+Every field is required. Text format is `PLAIN`, `SOURCE`, or `MARKDOWN`. Content is preserved without trimming and must contain 1–1,048,576 UTF-8 bytes; whitespace-only content is valid. The wire limit is independent because JSON escaping and structure also consume bytes. `expires_at` is either explicit `null` or a timestamp strictly after server time once normalized. Request JSON uses Go's strict JSON v2 semantics: duplicate or unknown object members, invalid UTF-8, malformed input, trailing values, and incorrectly cased field names are rejected with the generic `400 invalid_request` response.
 
 Success is `201 Created`:
 
@@ -120,6 +120,8 @@ Authorization: Bearer <owner-token>
 ```
 
 The Bearer scheme is case-insensitive; the token is case-sensitive. Missing, malformed, duplicate, and incorrect Authorization headers all return 401 with `WWW-Authenticate: Bearer`. Tokens in query strings, paths, bodies, or cookies are ignored and never authorize an operation. Management credentials must not be placed in URLs.
+
+For PATCH, the server parses the route and Authorization header, then verifies that the Share exists, is active, and the owner capability matches before reading or validating the body. An active Share with a wrong valid capability therefore returns 401 even when its body is invalid. The transactional update repeats existence, expiration, and capability checks before mutation. A syntactically present Bearer credential for an expired Share may receive 410 before digest comparison because expiration is public state; missing or malformed Authorization still returns 401 immediately.
 
 ## Update
 

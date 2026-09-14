@@ -1,8 +1,12 @@
 package capability
 
 import (
+	"bytes"
 	"encoding/base64"
+	"fmt"
+	"log/slog"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -60,7 +64,7 @@ func TestOwnerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal("GenerateOwnerToken returned an error")
 	}
-	value := token.String()
+	value := token.Reveal()
 	if len(value) != OwnerTokenLength {
 		t.Fatalf("owner token length = %d, want %d", len(value), OwnerTokenLength)
 	}
@@ -90,8 +94,30 @@ func TestOwnerToken(t *testing.T) {
 	if err != nil {
 		t.Fatal("second GenerateOwnerToken returned an error")
 	}
-	if VerifyOwnerToken(other.String(), token.Verifier()) {
+	if VerifyOwnerToken(other.Reveal(), token.Verifier()) {
 		t.Fatal("different owner token verified")
+	}
+}
+
+func TestOwnerTokenFormattingIsRedacted(t *testing.T) {
+	token, err := GenerateOwnerToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := token.Reveal()
+	var output bytes.Buffer
+	slog.New(slog.NewTextHandler(&output, nil)).Info("test", "token", token)
+	for name, formatted := range map[string]string{
+		"slog": output.String(),
+		"fmt":  fmt.Sprint(token),
+		"go":   fmt.Sprintf("%#v", token),
+	} {
+		if strings.Contains(formatted, secret) || strings.Contains(formatted, ownerTokenPrefix) {
+			t.Errorf("%s formatting exposed owner token", name)
+		}
+		if !strings.Contains(formatted, redactedOwnerToken) {
+			t.Errorf("%s formatting did not mark owner token as redacted", name)
+		}
 	}
 }
 

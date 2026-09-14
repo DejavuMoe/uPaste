@@ -11,7 +11,7 @@ The implemented internal packages are deliberately limited:
 - `config`: CLI/environment/default resolution for address and data directory.
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
 - `share`: concrete transactional Standard Text behavior using an injected clock.
-- `httpapi`: strict JSON, bearer-capability authorization, stable errors, and route-specific security headers.
+- `httpapi`: strict Go JSON v2 request decoding, bearer-capability authorization, stable legacy-compatible response encoding, and route-specific security headers.
 
 There is no encrypted text, File Share behavior, generic repository layer, cleanup worker, rate limiting, upload handling, or embedded frontend yet.
 
@@ -28,9 +28,10 @@ _dqs=0
 _foreign_keys=ON
 _journal_mode=WAL
 _synchronous=NORMAL
+_txlock=immediate
 ```
 
-The pool is conservatively bounded to four open and four idle connections without an arbitrary connection lifetime. This is an initial single-server value, not a scalability claim. Shared cache, OFD locking, loadable extensions, and speculative SQLite tuning are not enabled.
+The pool is conservatively bounded to four open and four idle connections without an arbitrary connection lifetime. Immediate write transactions were enabled after a four-owner-update/four-independent-create stress test repeatedly reproduced deferred-transaction `SQLITE_BUSY` and `SQLITE_BUSY_SNAPSHOT`; the same test passes repeatedly with immediate acquisition and the existing five-second busy timeout. The pool, WAL mode, and timeout remain unchanged. Shared cache, OFD locking, loadable extensions, and other speculative SQLite tuning are not enabled.
 
 Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates Share metadata and a partial expiration index; immutable migration 2 adds the separate `standard_text_payloads` STRICT table. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
 

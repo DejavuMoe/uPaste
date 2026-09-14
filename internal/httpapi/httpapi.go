@@ -1,8 +1,8 @@
 package httpapi
 
 import (
-	"bytes"
-	"encoding/json"
+	jsonv1 "encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -155,7 +155,7 @@ func (value *nullableTime) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	var encoded string
-	if err := json.Unmarshal(data, &encoded); err != nil {
+	if err := jsonv2.Unmarshal(data, &encoded); err != nil {
 		return errors.New("timestamp must be an RFC3339 string or null")
 	}
 	parsed, err := time.Parse(time.RFC3339Nano, encoded)
@@ -177,13 +177,8 @@ func (value *optionalText) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	var text textRequest
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&text); err != nil {
+	if err := jsonv2.Unmarshal(data, &text, jsonv2.RejectUnknownMembers(true)); err != nil {
 		return err
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("text must contain one JSON value")
 	}
 	value.value = &text
 	return nil
@@ -238,7 +233,7 @@ func (api *API) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Location", "/api/v1/shares/"+value.ID.String())
-	api.writeJSON(w, http.StatusCreated, createResponse{Share: responseFromShare(value), OwnerToken: token.String()})
+	api.writeJSON(w, http.StatusCreated, createResponse{Share: responseFromShare(value), OwnerToken: token.Reveal()})
 }
 
 func (api *API) read(w http.ResponseWriter, r *http.Request, id capability.ShareID) {
@@ -253,6 +248,10 @@ func (api *API) read(w http.ResponseWriter, r *http.Request, id capability.Share
 func (api *API) patch(w http.ResponseWriter, r *http.Request, id capability.ShareID) {
 	candidate, ok := api.authorization(w, r)
 	if !ok {
+		return
+	}
+	if err := api.shares.AuthorizeOwner(r.Context(), id, candidate); err != nil {
+		api.serviceError(w, "authorize Share update", err)
 		return
 	}
 	if !requireJSON(w, r, api.writeError) {
@@ -343,21 +342,12 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 		return errBodyTooLarge
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBytes)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(destination); err != nil {
+	if err := jsonv2.UnmarshalRead(r.Body, destination, jsonv2.RejectUnknownMembers(true)); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return errBodyTooLarge
 		}
 		return err
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return errBodyTooLarge
-		}
-		return errors.New("request must contain one JSON value")
 	}
 	return nil
 }
@@ -466,7 +456,7 @@ func responseFromShare(value share.Share) responseShare {
 func (api *API) writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(value); err != nil {
+	if err := jsonv1.NewEncoder(w).Encode(value); err != nil {
 		api.log.Error("write response failed", "error", err)
 	}
 }

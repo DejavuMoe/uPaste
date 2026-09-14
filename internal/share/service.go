@@ -94,6 +94,17 @@ func (s *Service) Get(ctx context.Context, id capability.ShareID) (Share, error)
 	return record.Share, err
 }
 
+func (s *Service) AuthorizeOwner(ctx context.Context, id capability.ShareID, candidate string) error {
+	record, err := loadActive(ctx, s.db, id, s.serverNow())
+	if err != nil {
+		return err
+	}
+	if !capability.VerifyOwnerToken(candidate, record.verifier) {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
 func (s *Service) Update(ctx context.Context, id capability.ShareID, candidate string, patch Patch) (Share, error) {
 	now := s.serverNow()
 	if patch.Text == nil && !patch.ExpirationSet {

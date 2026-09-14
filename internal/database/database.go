@@ -80,6 +80,7 @@ func dsn(path string) string {
 		"_foreign_keys": {"ON"},
 		"_journal_mode": {"WAL"},
 		"_synchronous":  {"NORMAL"},
+		"_txlock":       {"immediate"},
 	}
 	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
 }

@@ -55,7 +55,7 @@ func TestOwnerAuthorization(t *testing.T) {
 		request func() *http.Request
 	}{"wrong valid token", func() *http.Request {
 		r := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(string(patch)))
-		bearer(r, wrong.String())
+		bearer(r, wrong.Reveal())
 		return r
 	}})
 
@@ -171,8 +171,14 @@ func TestExpiredShareCannotBeRevived(t *testing.T) {
 	created := env.create("PLAIN", "expired content", expires.Format(time.RFC3339Nano))
 	*env.now = expires
 	future := expires.Add(time.Hour)
-	response := authorizedJSON(env, http.MethodPatch, "/api/v1/shares/"+created.Share.ID, created.OwnerToken, map[string]any{"expires_at": future.Format(time.RFC3339Nano)})
+	path := "/api/v1/shares/" + created.Share.ID
+	response := authorizedJSON(env, http.MethodPatch, path, created.OwnerToken, map[string]any{"expires_at": future.Format(time.RFC3339Nano)})
 	assertError(t, response, 410, "expired")
+	wrong, err := capability.GenerateOwnerToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertError(t, patchBytes(env, created.Share.ID, wrong.Reveal(), []byte(`{`)), 410, "expired")
 	var stored int64
 	if err := env.db.QueryRow("SELECT expires_at FROM shares WHERE id = ?", created.Share.ID).Scan(&stored); err != nil {
 		t.Fatal(err)
@@ -237,21 +243,33 @@ func TestOwnerTokenDoesNotLeakToLogsOrLaterResponses(t *testing.T) {
 	env := newAPITestEnv(t)
 	created := env.create("PLAIN", "content", nil)
 	path := "/api/v1/shares/" + created.Share.ID
-	invalid := "invalid-owner-token"
+	wrong, err := capability.GenerateOwnerToken()
+	if err != nil {
+		t.Fatal(err)
+	}
 	request := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(`{"expires_at":null}`))
 	request.Header.Set("Content-Type", "application/json")
-	bearer(request, invalid)
+	bearer(request, wrong.Reveal())
 	response := env.serve(request)
 	assertError(t, response, 401, "unauthorized")
+
+	marker := "parser-secret-marker"
+	request = httptest.NewRequest(http.MethodPatch, path, strings.NewReader(`{"expires_at":"`+marker+`"`))
+	request.Header.Set("Content-Type", "application/json")
+	bearer(request, created.OwnerToken)
+	assertError(t, env.serve(request), 400, "invalid_request")
+	if response := authorizedJSON(env, http.MethodPatch, path, created.OwnerToken, map[string]any{"expires_at": nil}); response.Code != http.StatusOK {
+		t.Fatalf("authorized PATCH status = %d", response.Code)
+	}
+
 	read := env.request(http.MethodGet, path, nil)
 	if strings.Contains(read.Body.String(), created.OwnerToken) || strings.Contains(read.Body.String(), "owner_token") {
 		t.Fatal("read response leaked owner token")
 	}
-	if strings.Contains(env.logs.String(), created.OwnerToken) || strings.Contains(env.logs.String(), invalid) {
-		t.Fatal("logs leaked an owner token candidate")
-	}
-	if strings.Contains(response.Body.String(), invalid) {
-		t.Fatal("error response echoed owner token candidate")
+	for _, secret := range []string{created.OwnerToken, wrong.Reveal(), marker} {
+		if strings.Contains(env.logs.String(), secret) || strings.Contains(response.Body.String(), secret) {
+			t.Fatal("logs or error response leaked sensitive input")
+		}
 	}
 }
 

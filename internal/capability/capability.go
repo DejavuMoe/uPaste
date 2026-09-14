@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 const (
@@ -59,7 +60,15 @@ func ParseOwnerToken(value string) (OwnerToken, error) {
 	return OwnerToken{value: value}, nil
 }
 
-func (token OwnerToken) String() string { return token.value }
+const redactedOwnerToken = "[REDACTED owner capability]"
+
+func (token OwnerToken) Reveal() string { return token.value }
+
+func (OwnerToken) String() string { return redactedOwnerToken }
+
+func (OwnerToken) GoString() string { return redactedOwnerToken }
+
+func (OwnerToken) LogValue() slog.Value { return slog.StringValue(redactedOwnerToken) }
 
 func (token OwnerToken) Verifier() Verifier { return sha256.Sum256([]byte(token.value)) }
 

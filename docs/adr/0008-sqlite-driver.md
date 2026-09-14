@@ -22,11 +22,14 @@ _dqs=0
 _foreign_keys=ON
 _journal_mode=WAL
 _synchronous=NORMAL
+_txlock=immediate
 ```
 
 The driver applies these parameters when each connection opens. Integration tests hold multiple pooled physical connections concurrently and verify their effective PRAGMAs, disabled double-quoted-string fallback, and defensive mode behavior rather than inspecting only the DSN.
 
-The `database/sql` pool allows at most four open and four idle connections, with no arbitrary connection lifetime. Shared cache, loadable extensions, writable schema, mmap/cache/auto-vacuum tuning, and OFD locking are not enabled. The pool size is a conservative single-server default, not a benchmark-derived scalability claim.
+Phase 2.1 adds immediate write transactions after a synchronized stress test with four owner PATCH operations and four independent creates repeatedly produced SQLite error 5 (`SQLITE_BUSY`) and extended error 517 (`SQLITE_BUSY_SNAPSHOT`) under deferred transactions. Immediate acquisition makes contenders wait under the existing busy timeout before any transaction reads; the same repeated test succeeds without changing WAL, timeout, or pool size.
+
+The `database/sql` pool allows at most four open and four idle connections, with no arbitrary connection lifetime. Shared cache, loadable extensions, writable schema, mmap/cache/auto-vacuum tuning, retries, application-wide mutexes, and OFD locking are not enabled. The pool size is a conservative single-server default, not a benchmark-derived scalability claim.
 
 ## Consequences
 

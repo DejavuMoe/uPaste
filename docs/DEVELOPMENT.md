@@ -47,7 +47,7 @@ The loopback default is intentional. Binding externally requires explicit operat
 
 `internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; migration 0001 remains immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.
 
-The initial pool limit is four open and four idle connections. This is a conservative starting point, not benchmark-derived tuning. Connection hardening and its tests are described in [ADR 0008](adr/0008-sqlite-driver.md).
+The pool limit is four open and four idle connections. Write transactions acquire SQLite's immediate lock so concurrent read-then-write owner operations wait under the existing five-second busy timeout instead of failing with a stale deferred snapshot. The concurrency regression runs four updates and four independent creates together. Connection hardening and its tests are described in [ADR 0008](adr/0008-sqlite-driver.md).
 
 ## Endpoint
 
@@ -55,7 +55,7 @@ The initial pool limit is four open and four idle connections. This is a conserv
 curl -i http://127.0.0.1:8080/healthz
 ```
 
-`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard Text routes and safe placeholder examples are documented in [API.md](API.md). Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
+`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard Text routes and safe placeholder examples are documented in [API.md](API.md). Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
 
 ## Go formatting scope
 
