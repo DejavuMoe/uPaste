@@ -41,6 +41,18 @@ describe('FileViewer', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  it('does not render unsafe download URLs or a preview', () => {
+    const unsafeUrl = 'javascript:alert(1)';
+    const { container } = render(
+      <FileViewer share={{ ...sampleShare, file: { ...sampleShare.file!, download_url: unsafeUrl } }} />
+    );
+
+    expect(screen.queryByRole('link', { name: 'Download file' })).toBeNull();
+    expect(screen.getByText('Download unavailable')).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain(unsafeUrl);
+    expect(container.querySelector('iframe, embed, object, video, audio, img')).toBeNull();
+  });
+
   it('sanitizes filename preventing traversal display', () => {
     const maliciousShare: ShareMetadata = {
       ...sampleShare,

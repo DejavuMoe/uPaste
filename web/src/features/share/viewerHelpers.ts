@@ -73,18 +73,23 @@ export function formatExpiration(expiresAt: string | null, now?: Date): string {
   return `Expires ${formattedDate}`;
 }
 
-export function isSafeUrl(url: string | undefined): boolean {
+function isSafeAbsoluteUrl(url: string | undefined, protocols: string[]): boolean {
   if (!url) return false;
   const trimmed = url.trim();
-  if (/[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) {
-    return false;
-  }
+  if (!trimmed || /[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) return false;
   try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:';
+    return protocols.includes(new URL(trimmed).protocol);
   } catch {
     return false;
   }
+}
+
+export function isSafeUrl(url: string | undefined): boolean {
+  return isSafeAbsoluteUrl(url, ['http:', 'https:', 'mailto:']);
+}
+
+export function isSafeDownloadUrl(url: string | undefined): boolean {
+  return isSafeAbsoluteUrl(url, ['http:', 'https:']);
 }
 
 export function sanitizeFilename(filename: string | undefined): string {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useLocation, Link } from 'react-router';
 import { getShare, ApiError } from '../../app/api';
 import type { ShareMetadata, TextFormat } from '../../app/types';
-import { decryptWithFragment, type EncryptedText } from '../../crypto/encryptedText';
+import { decryptWithFragment, type EncryptedPayloadV1, type EncryptedText } from '../../crypto/encryptedText';
 import { useDocumentTitle } from '../../app/useDocumentTitle';
 import { TextViewer } from './TextViewer';
 import { MarkdownViewer } from './MarkdownViewer';
@@ -11,6 +11,13 @@ import { ShareErrorState, type ShareErrorType } from './ShareErrorState';
 import { sanitizeFilename } from './viewerHelpers';
 
 type ViewerStatus = 'loading' | 'decrypting' | 'ready' | 'error';
+
+function hasViewerPayload(share: ShareMetadata): boolean {
+  if (share.payload_kind === 'TEXT') {
+    return share.privacy_mode === 'STANDARD' ? !!share.text : share.privacy_mode === 'ENCRYPTED' && !!share.encrypted_text;
+  }
+  return share.payload_kind === 'FILE' && share.privacy_mode === 'STANDARD' && !!share.file;
+}
 
 export const ShareRoute: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -60,20 +67,25 @@ export const ShareRoute: React.FC = () => {
         if (!active) return;
 
         const fetchedShare = response.share;
+        if (!hasViewerPayload(fetchedShare)) {
+          setStatus('error');
+          setErrorType('server_error');
+          return;
+        }
         setShare(fetchedShare);
 
         if (fetchedShare.privacy_mode === 'ENCRYPTED') {
           setStatus('decrypting');
           const fragment = window.location.hash || location.hash;
 
-          if (!fragment || fragment === '#' || !fragment.startsWith('#up_e1_') || !fetchedShare.encrypted_text) {
+          if (!fragment || fragment === '#') {
             setStatus('error');
             setErrorType('missing_key');
             return;
           }
 
           try {
-            const decrypted = await decryptWithFragment(fragment, fetchedShare.encrypted_text as any);
+            const decrypted = await decryptWithFragment(fragment, fetchedShare.encrypted_text as EncryptedPayloadV1);
             if (!active) return;
             setDecryptedText(decrypted);
             setStatus('ready');
@@ -156,11 +168,11 @@ export const ShareRoute: React.FC = () => {
               {(() => {
                 const isEncrypted = share.privacy_mode === 'ENCRYPTED';
                 const format: TextFormat = isEncrypted
-                  ? (decryptedText?.format ?? 'PLAIN')
-                  : (share.text?.format ?? 'PLAIN');
+                  ? decryptedText!.format
+                  : share.text!.format;
                 const content = isEncrypted
-                  ? (decryptedText?.content ?? '')
-                  : (share.text?.content ?? '');
+                  ? decryptedText!.content
+                  : share.text!.content;
 
                 if (format === 'MARKDOWN') {
                   return (

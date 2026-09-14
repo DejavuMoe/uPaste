@@ -5,6 +5,7 @@ import {
   formatFileSize,
   formatExpiration,
   isSafeUrl,
+  isSafeDownloadUrl,
   sanitizeFilename,
 } from './viewerHelpers';
 
@@ -117,6 +118,29 @@ describe('viewerHelpers', () => {
       expect(isSafeUrl('javascript\u0000:alert(1)')).toBe(false);
       expect(isSafeUrl('https://example.com/\u0001evil')).toBe(false);
       expect(isSafeUrl('https://example.com/\r\nevil')).toBe(false);
+    });
+  });
+
+  describe('isSafeDownloadUrl', () => {
+    it('allows only absolute http and https URLs', () => {
+      expect(isSafeDownloadUrl('https://files.example/f/id')).toBe(true);
+      expect(isSafeDownloadUrl('http://127.0.0.1:8081/f/id')).toBe(true);
+    });
+
+    it('rejects non-http URLs, relative URLs, and control characters', () => {
+      for (const url of [
+        'javascript:alert(1)',
+        'data:text/html,test',
+        'file:///etc/passwd',
+        'blob:https://example.com/id',
+        'mailto:test@example.com',
+        '//evil.example/file',
+        '/f/id',
+        'custom://example',
+        'https://files.example/f/\u0001id',
+      ]) {
+        expect(isSafeDownloadUrl(url)).toBe(false);
+      }
     });
   });
 

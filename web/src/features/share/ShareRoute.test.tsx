@@ -165,6 +165,7 @@ describe('ShareRoute', () => {
     };
 
     vi.spyOn(api, 'getShare').mockResolvedValue({ share: mockShare });
+    const decryptSpy = vi.spyOn(cryptoHelper, 'decryptWithFragment');
     window.location.hash = '';
 
     renderShareRoute('/s/enc-missing-key');
@@ -174,10 +175,42 @@ describe('ShareRoute', () => {
     });
 
     expect(screen.getByText(/This encrypted share cannot be read without the complete link/)).toBeInTheDocument();
+    expect(decryptSpy).not.toHaveBeenCalled();
     expect(document.title).toBe('uPaste');
   });
 
-  it('displays "Unable to decrypt this share" if decryption fails', async () => {
+  it('treats an empty hash as a missing key', async () => {
+    const mockShare: ShareMetadata = {
+      id: 'enc-empty-hash', payload_kind: 'TEXT', privacy_mode: 'ENCRYPTED',
+      created_at: '2026-09-14T12:00:00Z', updated_at: '2026-09-14T12:00:00Z', expires_at: null,
+      encrypted_text: { protocol: 'UPASTE_AES_GCM_V1', nonce: '123456789012', ciphertext: 'abcdefghij' },
+    };
+    vi.spyOn(api, 'getShare').mockResolvedValue({ share: mockShare });
+    const decryptSpy = vi.spyOn(cryptoHelper, 'decryptWithFragment');
+
+    renderShareRoute('/s/enc-empty-hash#');
+
+    await waitFor(() => expect(screen.getByText(/Decryption key missing/)).toBeInTheDocument());
+    expect(decryptSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['#wrong', '#up_e1_invalid'])('treats malformed non-empty fragment %s as a decrypt error', async (fragment) => {
+    const mockShare: ShareMetadata = {
+      id: 'enc-malformed', payload_kind: 'TEXT', privacy_mode: 'ENCRYPTED',
+      created_at: '2026-09-14T12:00:00Z', updated_at: '2026-09-14T12:00:00Z', expires_at: null,
+      encrypted_text: { protocol: 'UPASTE_AES_GCM_V1', nonce: '123456789012', ciphertext: 'abcdefghij' },
+    };
+    vi.spyOn(api, 'getShare').mockResolvedValue({ share: mockShare });
+    vi.spyOn(cryptoHelper, 'decryptWithFragment').mockRejectedValue(new Error('invalid capability'));
+    window.location.hash = fragment;
+
+    renderShareRoute(`/s/enc-malformed${fragment}`);
+
+    await waitFor(() => expect(screen.getByText(/Unable to decrypt this share/)).toBeInTheDocument());
+    expect(screen.queryByText(/Decryption key missing/)).toBeNull();
+  });
+
+  it('displays "Unable to decrypt this share" if a wrong valid-shape key fails', async () => {
     const mockShare: ShareMetadata = {
       id: 'enc-corrupted',
       payload_kind: 'TEXT',
@@ -209,6 +242,37 @@ describe('ShareRoute', () => {
     // Error message must not display cryptographic details or stack traces
     expect(screen.queryByText(/operation-specific reason/i)).toBeNull();
     expect(document.title).toBe('uPaste');
+  });
+
+  it('displays "Unable to decrypt this share" if ciphertext is tampered', async () => {
+    const mockShare: ShareMetadata = {
+      id: 'enc-tampered', payload_kind: 'TEXT', privacy_mode: 'ENCRYPTED',
+      created_at: '2026-09-14T12:00:00Z', updated_at: '2026-09-14T12:00:00Z', expires_at: null,
+      encrypted_text: { protocol: 'UPASTE_AES_GCM_V1', nonce: '123456789012', ciphertext: 'tampered' },
+    };
+    vi.spyOn(api, 'getShare').mockResolvedValue({ share: mockShare });
+    vi.spyOn(cryptoHelper, 'decryptWithFragment').mockRejectedValue(new Error('authentication failed'));
+    window.location.hash = '#up_e1_YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY';
+
+    renderShareRoute('/s/enc-tampered');
+
+    await waitFor(() => expect(screen.getByText(/Unable to decrypt this share/)).toBeInTheDocument());
+  });
+
+  it.each([
+    ['standard text without text', { payload_kind: 'TEXT', privacy_mode: 'STANDARD' }],
+    ['encrypted text without encrypted_text', { payload_kind: 'TEXT', privacy_mode: 'ENCRYPTED' }],
+    ['file without file', { payload_kind: 'FILE', privacy_mode: 'STANDARD' }],
+  ] as const)('fails closed for malformed API payload: %s', async (_name, payload) => {
+    const mockShare = {
+      id: 'malformed', created_at: '2026-09-14T12:00:00Z', updated_at: '2026-09-14T12:00:00Z', expires_at: null, ...payload,
+    } as ShareMetadata;
+    vi.spyOn(api, 'getShare').mockResolvedValue({ share: mockShare });
+
+    renderShareRoute('/s/malformed');
+
+    await waitFor(() => expect(screen.getByText('Service error')).toBeInTheDocument());
+    expect(screen.queryByText('Decryption key missing')).toBeNull();
   });
 
   it('handles 404 not found error', async () => {

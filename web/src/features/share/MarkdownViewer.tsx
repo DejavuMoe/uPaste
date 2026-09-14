@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Markdown from 'react-markdown';
+import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { CopyButton } from '../../components/CopyButton';
@@ -32,9 +32,9 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
   const sizeLabel = formatContentSize(actualBytes);
   const expirationLabel = formatExpiration(expiresAt);
 
-  const customComponents = {
+  const customComponents: Components = {
     // Override img to strictly prevent remote media requests and render safe text/link
-    img: ({ src, alt }: React.ComponentPropsWithoutRef<'img'>) => {
+    img: ({ node: _node, src, alt }) => {
       const safe = isSafeUrl(src);
       const label = alt ? `[Image: ${alt}]` : '[Image]';
       if (safe && src) {
@@ -53,7 +53,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
     },
 
     // Override a to enforce safe schemes and external link security
-    a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => {
+    a: ({ node: _node, href, children, ...props }) => {
       if (isSafeUrl(href)) {
         return (
           <a
@@ -70,7 +70,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
     },
 
     // Override input to enforce read-only disabled checkboxes for task lists
-    input: ({ type, checked, ...props }: React.ComponentPropsWithoutRef<'input'>) => {
+    input: ({ node: _node, type, checked, ...props }) => {
       if (type === 'checkbox') {
         return <input type="checkbox" checked={checked} disabled readOnly {...props} />;
       }
@@ -78,14 +78,14 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
     },
 
     // Wrap tables to enable horizontal scroll on overflow without breaking page bounds
-    table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
+    table: ({ node: _node, children, ...props }) => (
       <div className="table-responsive-wrapper">
         <table {...props}>{children}</table>
       </div>
     ),
 
     // Keyboard-accessible scrollable pre blocks
-    pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
+    pre: ({ node: _node, children, ...props }) => (
       <pre tabIndex={0} {...props}>
         {children}
       </pre>
@@ -160,6 +160,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
             <Markdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeSanitize]}
+              skipHtml
               components={customComponents}
             >
               {content}

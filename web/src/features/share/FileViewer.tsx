@@ -4,6 +4,7 @@ import {
   formatFileSize,
   formatExpiration,
   sanitizeFilename,
+  isSafeDownloadUrl,
 } from './viewerHelpers';
 
 export interface FileViewerProps {
@@ -51,13 +52,17 @@ export const FileViewer: React.FC<FileViewerProps> = ({ share }) => {
       </dl>
 
       <div className="file-viewer-actions">
-        <a
-          href={fileData.download_url}
-          download={cleanFilename}
-          className="btn btn-primary btn-download"
-        >
-          Download file
-        </a>
+        {isSafeDownloadUrl(fileData.download_url) ? (
+          <a
+            href={fileData.download_url}
+            download={cleanFilename}
+            className="btn btn-primary btn-download"
+          >
+            Download file
+          </a>
+        ) : (
+          <span>Download unavailable</span>
+        )}
       </div>
     </article>
   );

@@ -123,6 +123,11 @@ Hello
 <iframe src="https://evil.com"></iframe>
 
 <button onclick="alert(1)">Click me</button>
+<style>body { display: none }</style>
+<object data="https://evil.com"></object>
+<embed src="https://evil.com">
+<svg onload="alert(1)"></svg>
+<img src="https://evil.com/pixel" onerror="alert(1)">
 
 World
 `;
@@ -138,6 +143,7 @@ World
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('iframe')).toBeNull();
     expect(container.querySelector('button[onclick]')).toBeNull();
+    expect(container.querySelector('style, object, embed, svg, img, [onload], [onerror]')).toBeNull();
     expect(screen.getByText('Hello')).toBeInTheDocument();
     expect(screen.getByText('World')).toBeInTheDocument();
   });
