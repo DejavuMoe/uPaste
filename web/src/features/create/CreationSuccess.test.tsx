@@ -102,8 +102,11 @@ describe('CreationSuccess', () => {
     expect(writeTextMock).toHaveBeenCalledWith('up_o1_abcdef123456');
   });
 
-  it('navigates to manage and remembers capability in volatile memory only', () => {
+  it('navigates to manage and remembers capability in volatile memory only without leaking to history state or storage', () => {
     let capturedCapability: string | undefined = undefined;
+
+    const pushStateSpy = vi.spyOn(window.history, 'pushState');
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
 
     const TestManageRoute = () => {
       const { get } = useOwnerCapabilities();
@@ -137,10 +140,22 @@ describe('CreationSuccess', () => {
     expect(screen.getByText('Manage Target')).toBeInTheDocument();
     expect(capturedCapability).toBe('up_o1_abcdef123456');
 
-    // Verify token was NOT stored in persistent/session storage or history state
+    // Verify token was NOT passed in history.pushState or replaceState arguments
+    for (const call of pushStateSpy.mock.calls) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toContain('up_o1_abcdef123456');
+    }
+    for (const call of replaceStateSpy.mock.calls) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toContain('up_o1_abcdef123456');
+    }
+
+    // Verify token was NOT stored in persistent/session storage, URL href, or hash
     expect(localStorage.getItem('share123')).toBeNull();
     expect(sessionStorage.getItem('share123')).toBeNull();
-    expect(window.history.state).toBeNull();
+    expect(window.location.href).not.toContain('up_o1_abcdef123456');
+    expect(window.location.hash).not.toContain('up_o1_abcdef123456');
+    expect(JSON.stringify(window.history.state || {})).not.toContain('up_o1_abcdef123456');
   });
 
   it('triggers onReset when clicking New share', () => {

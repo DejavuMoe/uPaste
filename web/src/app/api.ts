@@ -36,8 +36,10 @@ export function parseRetryAfter(headerValue: string | null): number | undefined 
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
+  const rawText = await res.text()
+
   if (res.ok) {
-    return (await res.json()) as T
+    return JSON.parse(rawText) as T
   }
 
   const retryAfterSeconds = parseRetryAfter(res.headers.get('Retry-After'))
@@ -45,20 +47,14 @@ async function handleResponse<T>(res: Response): Promise<T> {
   let message = `Request failed with status ${res.status}`
 
   try {
-    const body = await res.json()
+    const body = JSON.parse(rawText)
     if (body && typeof body === 'object' && body.error) {
       code = body.error.code || code
       message = body.error.message || message
     }
   } catch {
-    // If response body is not JSON, try plain text
-    try {
-      const text = await res.text()
-      if (text.trim()) {
-        message = text.trim()
-      }
-    } catch {
-      // Ignore text decoding failure
+    if (rawText.trim()) {
+      message = rawText.trim()
     }
   }
 

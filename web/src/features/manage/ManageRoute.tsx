@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { useParams, useLocation, Link } from 'react-router';
+import { useParams, Link } from 'react-router';
 import { useOwnerCapabilities } from '../../app/ownerCapabilities';
 import { Button } from '../../components/Button';
+import { useDocumentTitle } from '../../app/useDocumentTitle';
 
 export const ManageRoute: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const location = useLocation();
+  useDocumentTitle('Manage share · uPaste');
   const { get, remember } = useOwnerCapabilities();
   const tokenInMemory = id ? get(id) : undefined;
 
@@ -32,23 +33,12 @@ export const ManageRoute: React.FC = () => {
           <p className="placeholder-meta">
             <strong>Share ID:</strong> <span className="font-mono">{id}</span>
           </p>
-          {location.hash && (
-            <p className="placeholder-meta">
-              <strong>Key fragment:</strong> <span className="font-mono">{location.hash}</span>
-            </p>
-          )}
 
           <div className="capability-status-box">
             {tokenInMemory ? (
               <div className="capability-present" role="status">
                 <span className="status-indicator-success" aria-hidden="true">✓ </span>
-                <strong>In-memory owner capability active</strong>
-                <p className="font-mono text-sm">
-                  Token: {tokenInMemory.slice(0, 6)}••••••••••••••••••••••••••••••
-                </p>
-                <p className="text-sm text-secondary">
-                  Capability retained securely in volatile process memory.
-                </p>
+                <strong>Management token available for this session.</strong>
               </div>
             ) : (
               <div className="capability-missing" role="status">
@@ -75,7 +65,7 @@ export const ManageRoute: React.FC = () => {
           </div>
 
           <p className="placeholder-note">
-            Full owner-management editor and mutation flows are scheduled for Phase 7C.
+            Management editing is not available in this build.
           </p>
         </div>
       </div>

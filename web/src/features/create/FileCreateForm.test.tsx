@@ -17,6 +17,22 @@ describe('FileCreateForm', () => {
     expect(screen.getByRole('button', { name: /create share/i })).toBeDisabled();
   });
 
+  it('rejects zero-byte files immediately upon selection', () => {
+    const createFileSpy = vi.spyOn(api, 'createFile');
+    render(<FileCreateForm onSuccess={vi.fn()} />);
+
+    const emptyFile = new File([], 'empty.txt', { type: 'text/plain' });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [emptyFile] } });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'File is empty. Select a file with at least 1 byte.',
+    );
+    expect(screen.queryByText('empty.txt')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create share/i })).toBeDisabled();
+    expect(createFileSpy).not.toHaveBeenCalled();
+  });
+
   it('rejects files larger than 64 MiB immediately upon selection', () => {
     render(<FileCreateForm onSuccess={vi.fn()} />);
 
@@ -30,6 +46,34 @@ describe('FileCreateForm', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/exceeds maximum size limit of 64 MiB/i);
     expect(screen.queryByText('huge.bin')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create share/i })).toBeDisabled();
+  });
+
+  it('handles multi-file drop by selecting only first file and displaying notice', () => {
+    render(<FileCreateForm onSuccess={vi.fn()} />);
+
+    const file1 = new File(['first content'], 'first.txt', { type: 'text/plain' });
+    const file2 = new File(['second content'], 'second.txt', { type: 'text/plain' });
+
+    const dropzone = screen.getByLabelText(/drop one file here or choose file/i);
+    fireEvent.drop(dropzone, {
+      dataTransfer: {
+        files: [file1, file2],
+      },
+    });
+
+    expect(
+      screen.getByText('Only one file per share is supported. The first file was selected.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('first.txt')).toBeInTheDocument();
+    expect(screen.queryByText('second.txt')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create share/i })).not.toBeDisabled();
+
+    // Removing file clears the notice
+    const removeBtn = screen.getByRole('button', { name: /remove/i });
+    fireEvent.click(removeBtn);
+    expect(
+      screen.queryByText('Only one file per share is supported. The first file was selected.'),
+    ).not.toBeInTheDocument();
   });
 
   it('accepts valid file <= 64 MiB and collapses into file row', () => {
@@ -64,6 +108,36 @@ describe('FileCreateForm', () => {
     expect(screen.getByText(/drop one file here/i)).toBeInTheDocument();
     expect(screen.queryByText('test.txt')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create share/i })).toBeDisabled();
+  });
+
+  it('renders progress without fabricated percentage when lengthComputable is false', async () => {
+    vi.spyOn(api, 'createFile').mockImplementation(async (_file, _expiresAt, onProgress) => {
+      onProgress?.({
+        loaded: 1024,
+        total: 0,
+        lengthComputable: false,
+        percent: null,
+      });
+      // Keep promise pending
+      return new Promise(() => {});
+    });
+
+    render(<FileCreateForm onSuccess={vi.fn()} />);
+
+    const validFile = new File(['file data'], 'doc.pdf');
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [validFile] } });
+
+    const submitBtn = screen.getByRole('button', { name: /create share/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(document.querySelector('.progress-status-text')).toHaveTextContent('Uploading…');
+    });
+
+    // Verify NO percentage or progress bar track
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 
   it('submits file upload, triggers progress, and calls onSuccess', async () => {
@@ -112,6 +186,30 @@ describe('FileCreateForm', () => {
       shareId: 'file-share-999',
       ownerToken: 'up_o1_filetok999',
     });
+  });
+
+  it('aborts active upload when component unmounts', () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.spyOn(api, 'createFile').mockImplementation(async (_f, _e, _p, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {});
+    });
+
+    const { unmount } = render(<FileCreateForm onSuccess={vi.fn()} />);
+
+    const validFile = new File(['file data'], 'doc.pdf');
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [validFile] } });
+
+    const submitBtn = screen.getByRole('button', { name: /create share/i });
+    fireEvent.click(submitBtn);
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 
   it('displays inline error on upload failure and preserves file selection', async () => {

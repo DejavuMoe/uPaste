@@ -65,7 +65,7 @@ describe('api client', () => {
 
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
       });
 
       const res = await createStandardText({
@@ -96,9 +96,10 @@ describe('api client', () => {
         ok: false,
         status: 400,
         headers: new Headers(),
-        json: async () => ({
-          error: { code: 'invalid_request', message: 'content cannot be empty' },
-        }),
+        text: async () =>
+          JSON.stringify({
+            error: { code: 'invalid_request', message: 'content cannot be empty' },
+          }),
       });
 
       await expect(
@@ -111,6 +112,30 @@ describe('api client', () => {
       ).rejects.toThrow(ApiError);
     });
 
+    it('parses plain text error when server response is not JSON', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        headers: new Headers(),
+        text: async () => 'Bad Gateway - Proxy error',
+      });
+
+      try {
+        await createStandardText({
+          payload_kind: 'TEXT',
+          privacy_mode: 'STANDARD',
+          text: { format: 'PLAIN', content: 'test' },
+          expires_at: null,
+        });
+        expect.unreachable('Should have thrown');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect(err.status).toBe(502);
+        expect(err.code).toBe('unknown_error');
+        expect(err.message).toBe('Bad Gateway - Proxy error');
+      }
+    });
+
     it('parses Retry-After header on 429 response', async () => {
       const headers = new Headers();
       headers.set('Retry-After', '60');
@@ -119,9 +144,10 @@ describe('api client', () => {
         ok: false,
         status: 429,
         headers,
-        json: async () => ({
-          error: { code: 'rate_limit_exceeded', message: 'Rate limit exceeded' },
-        }),
+        text: async () =>
+          JSON.stringify({
+            error: { code: 'rate_limit_exceeded', message: 'Rate limit exceeded' },
+          }),
       });
 
       try {
@@ -157,7 +183,7 @@ describe('api client', () => {
 
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
       });
 
       const res = await createEncryptedText({

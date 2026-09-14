@@ -21,6 +21,16 @@ describe('TextCreateForm', () => {
     expect(counter).toBeInTheDocument();
   });
 
+  it('correctly counts multi-byte CJK characters as UTF-8 bytes', () => {
+    render(<TextCreateForm onSuccess={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    // "你好世界" is 4 characters, 3 bytes each = 12 bytes
+    fireEvent.change(textarea, { target: { value: '你好世界' } });
+
+    expect(screen.getByText(/12 B \/ 1 MiB/)).toBeInTheDocument();
+  });
+
   it('disables submit button when content is empty', () => {
     render(<TextCreateForm onSuccess={vi.fn()} />);
 
@@ -33,26 +43,60 @@ describe('TextCreateForm', () => {
     expect(submitBtn).not.toBeDisabled();
   });
 
-  it('enforces 1 MiB limit and shows warning at 90%', () => {
+  it('permits whitespace-only content as valid non-empty input', async () => {
+    const createSpy = vi.spyOn(api, 'createStandardText').mockResolvedValue({
+      share: {
+        id: 'ws-123',
+        payload_kind: 'TEXT',
+        privacy_mode: 'STANDARD',
+        created_at: '2026-09-14T00:00:00Z',
+        updated_at: '2026-09-14T00:00:00Z',
+        expires_at: null,
+      },
+      owner_token: 'up_o1_tok',
+    });
+
+    render(<TextCreateForm onSuccess={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    fireEvent.change(textarea, { target: { value: '   \n\t  ' } });
+
+    const submitBtn = screen.getByRole('button', { name: /create share/i });
+    expect(submitBtn).not.toBeDisabled();
+
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalled();
+    });
+  });
+
+  it('accepts exactly 1,048,576 UTF-8 bytes and rejects 1,048,577 bytes', () => {
     render(<TextCreateForm onSuccess={vi.fn()} />);
     const textarea = screen.getByPlaceholderText(/paste or type content here/i);
     const submitBtn = screen.getByRole('button', { name: /create share/i });
 
-    // 950,000 bytes (exceeds 90% threshold of 943,718)
-    const largeContent = 'a'.repeat(950_000);
-    fireEvent.change(textarea, { target: { value: largeContent } });
+    // Exactly 1 MiB (1,048,576 bytes)
+    const exactMaxContent = 'a'.repeat(1_048_576);
+    fireEvent.change(textarea, { target: { value: exactMaxContent } });
 
-    const counter = screen.getByText(/927\.7 KB \/ 1 MiB/);
-    expect(counter).toHaveClass('counter-warning');
     expect(submitBtn).not.toBeDisabled();
+    expect(screen.queryByText(/limit exceeded/i)).not.toBeInTheDocument();
 
-    // Exceed 1 MiB limit (1,048,577 bytes)
+    // 1 MiB + 1 byte (1,048,577 bytes)
     const overLimitContent = 'a'.repeat(1_048_577);
     fireEvent.change(textarea, { target: { value: overLimitContent } });
 
-    expect(counter).toHaveClass('counter-danger');
-    expect(screen.getByText(/Limit exceeded by 1 bytes/)).toBeInTheDocument();
     expect(submitBtn).toBeDisabled();
+    expect(screen.getByText(/Limit exceeded by 1 bytes/)).toBeInTheDocument();
+  });
+
+  it('renders visible labels for Format, Privacy, and Expires', () => {
+    render(<TextCreateForm onSuccess={vi.fn()} />);
+
+    expect(screen.getByText('Format')).toBeInTheDocument();
+    expect(screen.getByText('Privacy')).toBeInTheDocument();
+    expect(screen.getByText('Expires')).toBeInTheDocument();
   });
 
   it('submits Standard Text and invokes onSuccess callback', async () => {
@@ -158,24 +202,88 @@ describe('TextCreateForm', () => {
     );
   });
 
-  it('displays API error inline and preserves draft content', async () => {
+  it('preserves draft content and re-enables button after 429 rate limit error', async () => {
     vi.spyOn(api, 'createStandardText').mockRejectedValue(
-      new api.ApiError(400, 'invalid_request', 'Invalid share content'),
+      new api.ApiError(429, 'rate_limit_exceeded', 'Rate limit exceeded', 30),
     );
 
     render(<TextCreateForm onSuccess={vi.fn()} />);
 
     const textarea = screen.getByPlaceholderText(/paste or type content here/i);
-    fireEvent.change(textarea, { target: { value: 'preserve this draft' } });
+    fireEvent.change(textarea, { target: { value: 'my important draft' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Invalid share content');
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Rate limit exceeded. Please wait 30 seconds before trying again.',
+      );
     });
 
-    // Verify draft text is still in the textarea
-    expect((textarea as HTMLTextAreaElement).value).toBe('preserve this draft');
+    // Draft text preserved
+    expect((textarea as HTMLTextAreaElement).value).toBe('my important draft');
+    // Button re-enabled after request settles
+    expect(submitBtn).not.toBeDisabled();
+  });
+
+  it('prevents duplicate submissions while request is in-flight', async () => {
+    let resolveRequest: any;
+    const pendingPromise = new Promise((resolve) => {
+      resolveRequest = resolve;
+    });
+
+    const createSpy = vi.spyOn(api, 'createStandardText').mockImplementation(() => pendingPromise as any);
+
+    render(<TextCreateForm onSuccess={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    fireEvent.change(textarea, { target: { value: 'single submission test' } });
+
+    const submitBtn = screen.getByRole('button', { name: /create share/i });
+
+    // First click initiates request
+    fireEvent.click(submitBtn);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+
+    // Second click while in-flight should be ignored
+    fireEvent.click(submitBtn);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+
+    // Resolve request
+    resolveRequest({
+      share: {
+        id: 'dup-123',
+        payload_kind: 'TEXT',
+        privacy_mode: 'STANDARD',
+        created_at: '2026-09-14T00:00:00Z',
+        updated_at: '2026-09-14T00:00:00Z',
+        expires_at: null,
+      },
+      owner_token: 'tok',
+    });
+  });
+
+  it('aborts in-flight request when component unmounts', () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.spyOn(api, 'createStandardText').mockImplementation(async (_req, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {});
+    });
+
+    const { unmount } = render(<TextCreateForm onSuccess={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    fireEvent.change(textarea, { target: { value: 'unmount test' } });
+
+    const submitBtn = screen.getByRole('button', { name: /create share/i });
+    fireEvent.click(submitBtn);
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });

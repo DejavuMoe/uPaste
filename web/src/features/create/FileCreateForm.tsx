@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createFile, ApiError } from '../../app/api';
 import type { UploadProgress } from '../../app/types';
 import { Button } from '../../components/Button';
@@ -11,6 +11,7 @@ export interface FileCreateSuccessData {
 
 export interface FileCreateFormProps {
   onSuccess: (data: FileCreateSuccessData) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 export const MAX_FILE_BYTES = 64 * 1024 * 1024; // 64 MiB = 67,108,864 bytes
@@ -21,7 +22,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => {
+export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDirtyChange }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [expiration, setExpiration] = useState<ExpirationValue>({
@@ -32,14 +33,41 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [statusText, setStatusText] = useState<string>('Create share');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+
+  // Unmount cleanup
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Report dirty state
+  useEffect(() => {
+    onDirtyChange?.(selectedFile !== null);
+  }, [selectedFile, onDirtyChange]);
 
   const handleFileSelection = (file: File | null) => {
     setErrorMessage(null);
     if (!file) {
       setSelectedFile(null);
+      return;
+    }
+
+    if (file.size === 0) {
+      setErrorMessage('File is empty. Select a file with at least 1 byte.');
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
@@ -77,6 +105,11 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
     if (isSubmitting) return;
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (e.dataTransfer.files.length > 1) {
+        setNoticeMessage('Only one file per share is supported. The first file was selected.');
+      } else {
+        setNoticeMessage(null);
+      }
       handleFileSelection(e.dataTransfer.files[0]);
     }
   };
@@ -84,6 +117,7 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
   const handleRemove = () => {
     setSelectedFile(null);
     setErrorMessage(null);
+    setNoticeMessage(null);
     setUploadProgress(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -108,18 +142,21 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
         selectedFile,
         expiresAt,
         (progress) => {
+          if (!isMountedRef.current) return;
           setStatusText('Uploading…');
           setUploadProgress(progress);
         },
         controller.signal,
       );
 
+      if (!isMountedRef.current) return;
       onSuccess({
         shareId: res.share.id,
         ownerToken: res.owner_token,
       });
     } catch (err: any) {
       if (err.name === 'AbortError') return;
+      if (!isMountedRef.current) return;
 
       if (err instanceof ApiError) {
         if (err.status === 429 && err.retryAfterSeconds) {
@@ -135,8 +172,10 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
         setErrorMessage('Failed to upload file. Please try again.');
       }
     } finally {
-      setIsSubmitting(false);
-      setStatusText('Create share');
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+        setStatusText('Create share');
+      }
       abortControllerRef.current = null;
     }
   };
@@ -146,6 +185,12 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
 
   return (
     <form className="create-form file-create-form" onSubmit={handleSubmit} noValidate>
+      {noticeMessage && (
+        <div className="form-notice-banner" role="status">
+          {noticeMessage}
+        </div>
+      )}
+
       {errorMessage && (
         <div className="form-error-banner" role="alert">
           {errorMessage}
@@ -158,28 +203,21 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              fileInputRef.current?.click();
-            }
-          }}
-          aria-label="Drop one file here or choose file. Maximum size: 64 MiB."
+          aria-label="Drop one file here or choose file"
         >
           <input
             ref={fileInputRef}
             type="file"
             className="sr-only"
+            tabIndex={-1}
             disabled={isSubmitting}
             onChange={(e) => {
+              setNoticeMessage(null);
               if (e.target.files && e.target.files.length > 0) {
                 handleFileSelection(e.target.files[0]);
               }
             }}
-            aria-hidden="true"
+            aria-label="File upload"
           />
           <div className="dropzone-content">
             <p className="dropzone-prompt">Drop one file here</p>
@@ -188,10 +226,10 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
               type="button"
               variant="secondary"
               disabled={isSubmitting}
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 fileInputRef.current?.click();
               }}
+              aria-label="Choose file"
             >
               Choose file
             </Button>
@@ -217,20 +255,24 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess }) => 
         </div>
       )}
 
-      {isSubmitting && uploadProgress && uploadProgress.lengthComputable && (
+      {isSubmitting && uploadProgress && (
         <div className="upload-progress-container" aria-live="polite">
-          <div className="progress-bar-track">
-            <div
-              className="progress-bar-fill"
-              style={{ width: `${uploadProgress.percent ?? 0}%` }}
-              role="progressbar"
-              aria-valuenow={uploadProgress.percent ?? 0}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            />
-          </div>
+          {uploadProgress.lengthComputable && (
+            <div className="progress-bar-track">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${uploadProgress.percent ?? 0}%` }}
+                role="progressbar"
+                aria-valuenow={uploadProgress.percent ?? 0}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              />
+            </div>
+          )}
           <div className="progress-status-text">
-            {statusText} {uploadProgress.percent !== null ? `${uploadProgress.percent}%` : ''} ({formatFileSize(uploadProgress.loaded)} / {formatFileSize(uploadProgress.total)})
+            {uploadProgress.lengthComputable
+              ? `${statusText} ${uploadProgress.percent !== null ? `${uploadProgress.percent}%` : ''} (${formatFileSize(uploadProgress.loaded)} / ${formatFileSize(uploadProgress.total)})`
+              : statusText}
           </div>
         </div>
       )}
