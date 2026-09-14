@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DejavuMoe/uPaste/internal/abuse"
 	"github.com/DejavuMoe/uPaste/internal/capability"
 	"github.com/DejavuMoe/uPaste/internal/share"
 )
@@ -17,10 +18,14 @@ import (
 type API struct {
 	shares *share.Service
 	log    *slog.Logger
+	abuse  *abuse.Control
 }
 
 func New(shares *share.Service, log *slog.Logger) http.Handler {
-	api := &API{shares: shares, log: log}
+	return NewWithAbuse(shares, log, abuse.New(abuse.Config{Disabled: true}))
+}
+func NewWithAbuse(shares *share.Service, log *slog.Logger, control *abuse.Control) http.Handler {
+	api := &API{shares: shares, log: log, abuse: control}
 	return securityHeaders(http.HandlerFunc(api.route))
 }
 
@@ -74,6 +79,15 @@ func (api *API) route(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !api.abuse.Allow(r, abuse.Read) {
+		api.rateLimited(w, 60)
+		return
+	}
+	if !api.abuse.TryDownload() {
+		api.rateLimited(w, 1)
+		return
+	}
+	defer api.abuse.ReleaseDownload()
 	idValue := strings.TrimPrefix(r.URL.Path, "/f/")
 	if idValue == "" || strings.Contains(idValue, "/") {
 		http.Error(w, "file not found", http.StatusNotFound)
@@ -100,6 +114,11 @@ func (api *API) route(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+hex.EncodeToString(value.File.SHA256[:])+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(value.File.Size, 10))
 	http.ServeContent(w, r, value.File.Filename, value.CreatedAt, object)
+}
+
+func (api *API) rateLimited(w http.ResponseWriter, retry int) {
+	w.Header().Set("Retry-After", strconv.Itoa(retry))
+	http.Error(w, "too many requests", http.StatusTooManyRequests)
 }
 
 func (api *API) error(w http.ResponseWriter, id string, err error) {

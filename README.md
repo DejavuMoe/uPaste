@@ -2,13 +2,13 @@
 
 uPaste is a new self-hosted application for sharing text and files. Security, reliability, and simple single-server operation are its priorities.
 
-## Phase 4.1 status
+## Phase 5 status
 
-Phase 4.1 retains Standard File Shares and hardens their bounded transfers: multipart upload bodies and file responses receive a 10-minute per-operation deadline while ordinary requests retain short server deadlines. It also compensates any object possibly published by a failed create. Phase 4 implements streamed multipart upload to local object storage, metadata persistence, isolated attachment-only file delivery, owner expiration updates/deletion, and Range/HEAD download support. Standard and zero-knowledge Encrypted Text behavior remains unchanged; no product UI is added.
+Phase 5 adds asynchronous expired-data purge, local-object reconciliation, trusted-proxy-aware process-local rate limits, and bounded File-transfer concurrency. Existing Standard/Encrypted Text and Standard File contracts remain unchanged.
 
-> Phase 4 does not yet include rate limiting or public-instance abuse controls. The anonymous creation endpoint is not production-ready for unrestricted Internet exposure.
+> These application-layer controls target private self-hosted deployments and complement trusted reverse-proxy/network protections; they do not provide DDoS resistance or make uPaste a public multi-tenant Pastebin. There is no malware scanning, accounts, moderation, distributed limiter, or storage quota.
 
-Encrypted Files, expiration cleanup/reconciliation, accounts, search/listing, and product frontend UI are not implemented.
+Encrypted Files, product UI, search/listing, and deployment packaging are not implemented.
 
 ## Quick start
 

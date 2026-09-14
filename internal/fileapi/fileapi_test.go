@@ -27,6 +27,7 @@ type testEnv struct {
 	service *share.Service
 	handler http.Handler
 	now     *time.Time
+	log     *slog.Logger
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -42,7 +43,8 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 	now := time.Date(2026, 9, 14, 3, 0, 0, 0, time.UTC)
 	service := share.NewWithStore(db, store, func() time.Time { return now })
-	env := &testEnv{db: db, store: store, service: service, now: &now, handler: New(service, slog.New(slog.NewTextHandler(io.Discard, nil)))}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	env := &testEnv{db: db, store: store, service: service, now: &now, log: log, handler: New(service, log)}
 	t.Cleanup(func() { _ = db.Close() })
 	return env
 }

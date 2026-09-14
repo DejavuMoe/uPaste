@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 const keyBytes = 16
@@ -38,6 +40,10 @@ type Store interface {
 	Stage(context.Context, io.Reader, int64) (Staged, error)
 	Open(string) (ReadSeekCloser, error)
 	Delete(string) error
+}
+type ReconcileResult struct{ StagesDeleted, OrphansDeleted, MissingReferenced, Anomalies int }
+type Reconciler interface {
+	Reconcile(context.Context, map[string]struct{}, time.Time) (ReconcileResult, error)
 }
 
 type Local struct{ root string }
@@ -127,6 +133,82 @@ func (store *Local) Open(key string) (ReadSeekCloser, error) {
 	}
 	return file, nil
 }
+
+func (store *Local) Reconcile(ctx context.Context, referenced map[string]struct{}, staleBefore time.Time) (result ReconcileResult, err error) {
+	entries, err := os.ReadDir(store.root)
+	if err != nil {
+		return result, err
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		name := entry.Name()
+		path := filepath.Join(store.root, name)
+		info, infoErr := os.Lstat(path)
+		if infoErr != nil {
+			return result, infoErr
+		}
+		if strings.HasPrefix(name, ".stage-") {
+			if info.Mode().IsRegular() && !info.ModTime().After(staleBefore) {
+				if err := os.Remove(path); err != nil {
+					return result, err
+				}
+				result.StagesDeleted++
+			} else if !info.Mode().IsRegular() {
+				result.Anomalies++
+			}
+			continue
+		}
+		if !validShard(name) || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			result.Anomalies++
+			continue
+		}
+		children, readErr := os.ReadDir(path)
+		if readErr != nil {
+			return result, readErr
+		}
+		for _, child := range children {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
+			childPath := filepath.Join(path, child.Name())
+			childInfo, childErr := os.Lstat(childPath)
+			if childErr != nil {
+				return result, childErr
+			}
+			key := name + child.Name()
+			if !validKey(key) || !childInfo.Mode().IsRegular() {
+				result.Anomalies++
+				continue
+			}
+			if _, ok := referenced[key]; !ok && !childInfo.ModTime().After(staleBefore) {
+				if err := os.Remove(childPath); err != nil {
+					return result, err
+				}
+				result.OrphansDeleted++
+			}
+		}
+	}
+	for key := range referenced {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		path, pathErr := store.path(key)
+		if pathErr != nil {
+			result.MissingReferenced++
+			continue
+		}
+		info, statErr := os.Lstat(path)
+		if statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			result.MissingReferenced++
+		}
+	}
+	return result, nil
+}
+
+func validShard(value string) bool { return len(value) == 2 && validKey(value+strings.Repeat("0", 30)) }
+func validKey(value string) bool   { _, err := (&Local{}).path(value); return err == nil }
 
 func (store *Local) Delete(key string) error {
 	if err := store.checkShard(key); errors.Is(err, os.ErrNotExist) {

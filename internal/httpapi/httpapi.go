@@ -11,11 +11,13 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/DejavuMoe/uPaste/internal/abuse"
 	"github.com/DejavuMoe/uPaste/internal/capability"
 	"github.com/DejavuMoe/uPaste/internal/domain"
 	"github.com/DejavuMoe/uPaste/internal/objectstore"
@@ -37,10 +39,14 @@ type API struct {
 	shares     *share.Service
 	fileOrigin string
 	log        *slog.Logger
+	abuse      *abuse.Control
 }
 
 func New(shares *share.Service, fileOrigin string, log *slog.Logger) http.Handler {
-	api := &API{shares: shares, fileOrigin: fileOrigin, log: log}
+	return NewWithAbuse(shares, fileOrigin, log, abuse.New(abuse.Config{Disabled: true}))
+}
+func NewWithAbuse(shares *share.Service, fileOrigin string, log *slog.Logger, control *abuse.Control) http.Handler {
+	api := &API{shares: shares, fileOrigin: fileOrigin, log: log, abuse: control}
 	return securityHeaders(http.HandlerFunc(api.route))
 }
 
@@ -77,6 +83,18 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func (api *API) allow(w http.ResponseWriter, r *http.Request, kind int) bool {
+	if api.abuse.Allow(r, kind) {
+		return true
+	}
+	api.rateLimited(w, 60)
+	return false
+}
+func (api *API) rateLimited(w http.ResponseWriter, retry int) {
+	w.Header().Set("Retry-After", strconv.Itoa(retry))
+	api.writeError(w, http.StatusTooManyRequests, "rate_limited", "too many requests")
+}
+
 func (api *API) collection(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/api/v1/shares" {
 		api.writeError(w, http.StatusNotFound, "not_found", "share not found")
@@ -87,6 +105,9 @@ func (api *API) collection(w http.ResponseWriter, r *http.Request) {
 		api.writeError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
 		return
 	}
+	if !api.allow(w, r, abuse.Create) {
+		return
+	}
 	api.create(w, r)
 }
 
@@ -94,6 +115,12 @@ func (api *API) item(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPatch && r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "GET, PATCH, DELETE")
 		api.writeError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
+		return
+	}
+	if r.Method == http.MethodGet && !api.allow(w, r, abuse.Read) {
+		return
+	}
+	if (r.Method == http.MethodPatch || r.Method == http.MethodDelete) && !api.allow(w, r, abuse.Mutation) {
 		return
 	}
 	idValue := strings.TrimPrefix(r.URL.Path, "/api/v1/shares/")
@@ -120,6 +147,9 @@ func (api *API) raw(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !api.allow(w, r, abuse.Read) {
 		return
 	}
 	idValue := strings.TrimPrefix(r.URL.Path, "/raw/")
@@ -335,6 +365,11 @@ type fileMetadataRequest struct {
 }
 
 func (api *API) createFile(w http.ResponseWriter, r *http.Request) {
+	if !api.abuse.TryUpload() {
+		api.rateLimited(w, 1)
+		return
+	}
+	defer api.abuse.ReleaseUpload()
 	controller := http.NewResponseController(w)
 	deadline := time.Now().Add(share.FileTransferDeadline)
 	if err := controller.SetReadDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {

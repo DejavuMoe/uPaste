@@ -33,6 +33,7 @@ Configuration precedence is CLI, then environment, then default:
 | Application address | `UPASTE_ADDR` | `-addr` | `127.0.0.1:8080` |
 | File listener address | `UPASTE_FILE_ADDR` | `-file-addr` | `127.0.0.1:8081` |
 | Public file origin | `UPASTE_FILE_ORIGIN` | `-file-origin` | `http://127.0.0.1:8081` |
+| Trusted proxy CIDRs | `UPASTE_TRUSTED_PROXY_CIDRS` | `-trusted-proxy-cidrs` | empty |
 | Data directory | `UPASTE_DATA_DIR` | `-data-dir` | `./data` |
 
 The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db` and `<data-dir>/objects/`; newly created directories/database/object modes are `0700`/`0600`. File and app addresses must differ. File origin must be an absolute HTTP(S) origin without path, query, fragment, or userinfo; it is never inferred from Host or forwarded headers. Existing operator-managed permissions are preserved. Examples:
@@ -48,6 +49,8 @@ The loopback default is intentional. Binding externally requires explicit operat
 ## Transfer deadlines
 
 Servers keep 5-second header reads, 15-second ordinary read/write deadlines, 60-second idle connections, and 32 KiB headers. A valid multipart File create extends that request body's read deadline and eventual response write deadline to 10 minutes before multipart parsing; File GET/HEAD extends only that response write deadline to 10 minutes before delivery. This bounded exception is needed for the 64 MiB transfer limit and does not add rate limiting or make ordinary JSON slow-body requests long-lived.
+
+Trusted proxy CIDRs are comma-separated and empty by default: forwarded headers are ignored unless the immediate TCP peer matches one. Phase 5 maintenance runs once after listener startup and every 15 minutes; it purges expired rows in bounded batches and reconciles stale Local objects after a 30-minute grace. It has no HTTP/admin endpoint.
 
 ## Database and migrations
 

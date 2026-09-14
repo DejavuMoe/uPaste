@@ -27,9 +27,16 @@ Application errors use:
 | 413 | `request_too_large` | JSON, multipart wire body, metadata, decoded text, or File exceeds its limit. |
 | 415 | `unsupported_media_type` | Request is not identity-encoded JSON or multipart/form-data. |
 | 422 | `unsupported_share_type` | A valid domain combination, currently `FILE + ENCRYPTED`, is not implemented. |
+| 429 | `rate_limited` | Process-local IP-derived limiter rejected the request; `Retry-After` is set. |
 | 500 | `internal_error` | An internal operation failed; implementation details are not exposed. |
 
 API timestamps are RFC3339 UTC. Incoming timestamps accept RFC3339/RFC3339Nano and are normalized to UTC millisecond precision. Expiration is authoritative server time: `now >= expires_at` is expired and returns 410 without content. Expired Shares cannot be updated, deleted, or revived and await a future cleanup mechanism.
+
+## Rate limits
+
+Current self-hosted defaults use trusted-proxy-aware client IP identity: create 10/minute (burst 5), owner mutation 30/minute (burst 10), public reads 120/minute (burst 60), and a process-wide 1000/minute burst-200 limiter. File uploads/downloads also have non-blocking process-wide gates of 4/32. API limits return the normal `429 rate_limited` envelope and `Retry-After`; File-origin limits return plain-text 429 with the same header and File security headers. Limits are in-memory, reset on restart, and are not distributed or DDoS protection.
+
+Expired Shares become inaccessible synchronously but physical DB/object cleanup is asynchronous; there is no maintenance endpoint.
 
 ## Create Text
 

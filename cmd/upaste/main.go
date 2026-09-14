@@ -13,10 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DejavuMoe/uPaste/internal/abuse"
 	"github.com/DejavuMoe/uPaste/internal/config"
 	"github.com/DejavuMoe/uPaste/internal/database"
 	"github.com/DejavuMoe/uPaste/internal/fileapi"
 	"github.com/DejavuMoe/uPaste/internal/httpapi"
+	"github.com/DejavuMoe/uPaste/internal/maintenance"
 	"github.com/DejavuMoe/uPaste/internal/objectstore"
 	"github.com/DejavuMoe/uPaste/internal/share"
 )
@@ -67,8 +69,9 @@ func run(log *slog.Logger) (err error) {
 		return fmt.Errorf("initialize object storage: %w", err)
 	}
 	shareService := share.NewWithStore(db, store, time.Now)
-	appServer := newServer(cfg.Addr, newHandler(httpapi.New(shareService, cfg.FileOrigin, log)))
-	fileServer := newServer(cfg.FileAddr, fileapi.New(shareService, log))
+	control := abuse.New(abuse.Config{Trusted: cfg.TrustedProxies})
+	appServer := newServer(cfg.Addr, newHandler(httpapi.NewWithAbuse(shareService, cfg.FileOrigin, log, control)))
+	fileServer := newServer(cfg.FileAddr, fileapi.NewWithAbuse(shareService, log, control))
 	fileListener, err := net.Listen("tcp", cfg.FileAddr)
 	if err != nil {
 		return fmt.Errorf("listen file HTTP: %w", err)
@@ -106,6 +109,13 @@ func run(log *slog.Logger) (err error) {
 
 	log.Info("server listening", "address", appServer.Addr)
 	log.Info("file server listening", "address", fileServer.Addr)
+	maintenanceCtx, cancelMaintenance := context.WithCancel(ctx)
+	maintenanceDone := make(chan struct{})
+	go func() {
+		defer close(maintenanceDone)
+		maintenance.Start(maintenanceCtx, maintenance.New(db, store), time.Now, log)
+	}()
+	defer func() { cancelMaintenance(); <-maintenanceDone }()
 	if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	}

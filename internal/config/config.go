@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -22,16 +23,18 @@ const (
 type LookupEnv func(string) (string, bool)
 
 type Config struct {
-	Addr       string
-	FileAddr   string
-	FileOrigin string
-	DataDir    string
+	Addr           string
+	FileAddr       string
+	FileOrigin     string
+	TrustedProxies []netip.Prefix
+	DataDir        string
 }
 
 func Parse(args []string, lookup LookupEnv) (Config, error) {
 	addr := envOrDefault(lookup, "UPASTE_ADDR", defaultAddr)
 	fileAddr := envOrDefault(lookup, "UPASTE_FILE_ADDR", defaultFileAddr)
 	fileOrigin := envOrDefault(lookup, "UPASTE_FILE_ORIGIN", defaultFileOrigin)
+	trustedProxyCIDRs := envOrDefault(lookup, "UPASTE_TRUSTED_PROXY_CIDRS", "")
 	dataDir := envOrDefault(lookup, "UPASTE_DATA_DIR", defaultDataDir)
 
 	flags := flag.NewFlagSet("upaste", flag.ContinueOnError)
@@ -39,6 +42,7 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 	flags.StringVar(&addr, "addr", addr, "application HTTP listen address")
 	flags.StringVar(&fileAddr, "file-addr", fileAddr, "file HTTP listen address")
 	flags.StringVar(&fileOrigin, "file-origin", fileOrigin, "public file origin")
+	flags.StringVar(&trustedProxyCIDRs, "trusted-proxy-cidrs", trustedProxyCIDRs, "comma-separated trusted proxy CIDRs")
 	flags.StringVar(&dataDir, "data-dir", dataDir, "runtime data directory")
 	if err := flags.Parse(args); err != nil {
 		return Config{}, fmt.Errorf("parse flags: %w", err)
@@ -63,6 +67,11 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("invalid file origin: %w", err)
 	}
 
+	trustedProxies, err := parseCIDRs(trustedProxyCIDRs)
+	if err != nil {
+		return Config{}, fmt.Errorf("invalid trusted proxy CIDRs: %w", err)
+	}
+
 	dataDir = strings.TrimSpace(dataDir)
 	if dataDir == "" {
 		return Config{}, fmt.Errorf("data directory must not be empty")
@@ -72,7 +81,7 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("resolve data directory: %w", err)
 	}
 
-	return Config{Addr: addr, FileAddr: fileAddr, FileOrigin: fileOrigin, DataDir: dataDir}, nil
+	return Config{Addr: addr, FileAddr: fileAddr, FileOrigin: fileOrigin, TrustedProxies: trustedProxies, DataDir: dataDir}, nil
 }
 
 func validateAddress(value string) error {
@@ -96,6 +105,22 @@ func normalizeOrigin(value string) (string, error) {
 		return "", errors.New("origin must not contain credentials, path, query, or fragment")
 	}
 	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+func parseCIDRs(value string) ([]netip.Prefix, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	prefixes := make([]netip.Prefix, 0, len(parts))
+	for _, part := range parts {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(part))
+		if err != nil {
+			return nil, err
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	return prefixes, nil
 }
 
 func envOrDefault(lookup LookupEnv, name, fallback string) string {

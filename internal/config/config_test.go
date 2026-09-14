@@ -52,6 +52,13 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseTrustedProxyCIDRs(t *testing.T) {
+	config, err := Parse([]string{"-trusted-proxy-cidrs", "127.0.0.1/32, ::1/128"}, nil)
+	if err != nil || len(config.TrustedProxies) != 2 || config.TrustedProxies[0].String() != "127.0.0.1/32" {
+		t.Fatalf("config/error = %+v/%v", config, err)
+	}
+}
+
 func TestParseRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
 		name string
@@ -73,6 +80,7 @@ func TestParseRejectsInvalidValues(t *testing.T) {
 		{"origin path", []string{"-file-origin", "https://files.example/path"}, nil},
 		{"origin query", []string{"-file-origin", "https://files.example?q=x"}, nil},
 		{"origin fragment", []string{"-file-origin", "https://files.example/#x"}, nil},
+		{"invalid trusted proxy CIDR", []string{"-trusted-proxy-cidrs", "not-a-cidr"}, nil},
 		{"unknown flag", []string{"-unknown"}, nil},
 		{"positional argument", []string{"unexpected"}, nil},
 	}

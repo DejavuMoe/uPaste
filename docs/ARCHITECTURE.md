@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Phase 4.1 implementation
+## Current Phase 5 implementation
 
 uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check. Phase 4 adds Standard File multipart create/read/owner-expiration-update/delete behavior. Files are delivered only from a second listener; Standard raw remains available while Encrypted raw returns 409. `web/` remains an independently built shell without product UI, plus a React-independent Web Crypto protocol module.
 
@@ -14,8 +14,10 @@ The implemented internal packages are deliberately limited:
 - `httpapi`: strict Go JSON v2 and multipart creation, bearer authorization, and application API responses.
 - `fileapi`: isolated attachment-only File listener with a bounded response deadline.
 - `objectstore`: `Store` staging/commit/open/delete boundary; `Local` is the current implementation.
+- `maintenance`: deterministic purge/reconciliation pass plus one periodic worker.
+- `abuse`: trusted-proxy client identity, bounded process-local limiters, and File gates.
 
-There is no generic repository layer, cleanup/reconciliation worker, rate limiting, encrypted File behavior, encrypted product UI, or embedded frontend yet.
+There is no generic repository layer, encrypted File behavior, encrypted product UI, embedded frontend, distributed limiter, or storage quota yet.
 
 The browser module `web/src/crypto/encryptedText.ts` owns key generation, AES-256-GCM encryption/decryption, the binary plaintext envelope, and strict key-fragment/base64url handling. The HTTP server never decrypts and has no production AES key handling. API responses model Standard, Encrypted, and File payloads explicitly so irrelevant zero-valued fields are never serialized.
 
@@ -55,6 +57,8 @@ The deployable shape remains one Go binary, one SQLite database, one local objec
 
 The same binary already exposes separate loopback listeners for the application/API and untrusted file origin, commonly `127.0.0.1:8080` and `127.0.0.1:8081`. Reverse-proxy routing must provide separate origins and must not rely only on `Host`. TLS normally terminates at a trusted reverse proxy.
 
-## Not implemented in Phase 4
+Maintenance runs once asynchronously after both listeners start and then every 15 minutes. It purges at most 2048 expired rows in 256-row transactions, then snapshots all remaining File references and scans Local objects once. Objects/stages require a 30-minute grace, longer than the 10-minute File deadline; unknown filesystem entries are reported, not removed.
+
+## Not implemented in Phase 5
 
 Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, rate limiting, expiration/object reconciliation, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
