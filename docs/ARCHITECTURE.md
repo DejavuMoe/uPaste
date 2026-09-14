@@ -1,8 +1,8 @@
 # Architecture
 
-## Current Phase 1 implementation
+## Current Phase 2 implementation
 
-uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, graceful SIGINT/SIGTERM shutdown, and loopback by default. Its only endpoint remains `GET /healthz`; this lightweight liveness check does not query the database. `web/` remains an independently built React/TypeScript/Vite shell.
+uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check. Phase 2 adds Standard Text create/read/raw/owner-update/delete HTTP behavior; `web/` remains an independently built shell without product UI.
 
 The implemented internal packages are deliberately limited:
 
@@ -10,8 +10,10 @@ The implemented internal packages are deliberately limited:
 - `capability`: canonical random Share IDs and owner capabilities plus SHA-256 verification.
 - `config`: CLI/environment/default resolution for address and data directory.
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
+- `share`: concrete transactional Standard Text behavior using an injected clock.
+- `httpapi`: strict JSON, bearer-capability authorization, stable errors, and route-specific security headers.
 
-There is no Share CRUD, payload storage, authorization middleware, encryption implementation, upload handling, or embedded frontend yet.
+There is no encrypted text, File Share behavior, generic repository layer, cleanup worker, rate limiting, upload handling, or embedded frontend yet.
 
 ## Persistence foundation
 
@@ -30,7 +32,7 @@ _synchronous=NORMAL
 
 The pool is conservatively bounded to four open and four idle connections without an arbitrary connection lifetime. This is an initial single-server value, not a scalability claim. Shared cache, OFD locking, loadable extensions, and speculative SQLite tuning are not enabled.
 
-Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates only Share metadata and a partial expiration index. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
+Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates Share metadata and a partial expiration index; immutable migration 2 adds the separate `standard_text_payloads` STRICT table. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
 
 ## Frozen V1 boundaries
 
@@ -44,6 +46,6 @@ The deployable shape remains one Go binary, one SQLite database, and one data di
 
 The same binary may later expose separate loopback listeners for the application/API and untrusted file origin, commonly `127.0.0.1:8080` and `127.0.0.1:8081`. Reverse-proxy routing must provide separate origins and must not rely only on `Host`. TLS normally terminates at a trusted reverse proxy.
 
-## Not implemented in Phase 1
+## Not implemented in Phase 2
 
-Share APIs, payload persistence, authorization middleware, uploads, encryption code, rate limiting, file listener, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
+Encrypted Text and File Share APIs/persistence, uploads, rate limiting, expiration cleanup, file listener, Markdown rendering, syntax highlighting, Docker packaging, and production UI remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.

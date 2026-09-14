@@ -23,10 +23,10 @@ The owner capability is independently generated from 32 `crypto/rand` bytes and 
 
 ## Initial persistence constraints
 
-Phase 1 metadata is expected to represent concepts equivalent to `id`, `payload_kind`, `privacy_mode`, `owner_token_verifier`, `created_at`, `updated_at`, and nullable `expires_at`. Timestamps are integer Unix milliseconds with UTC semantics; `expires_at = NULL` means no automatic expiration, subject to instance policy.
+The `shares` metadata table stores `id`, `payload_kind`, `privacy_mode`, `owner_token_verifier`, `created_at`, `updated_at`, and nullable `expires_at`. Timestamps are integer Unix milliseconds with UTC semantics; `expires_at = NULL` means no automatic expiration, subject to instance policy.
 
-Payload columns are deliberately not frozen: text body/ciphertext belongs to the text phase and file object metadata to the file phase. Phase 1 may refine SQL while preserving these constraints, derived expiration, and deletion by removal from the active table.
+Standard plaintext is stored separately in `standard_text_payloads`, one row per Share, with format and 1–1,048,576 UTF-8 content bytes. Encrypted text and file metadata remain deliberately undefined rather than being shoehorned into this table.
 
 ## Current implementation
 
-Phase 1 implements closed Go types and parsers for payload kind, privacy mode, and text format; explicit payload/privacy compatibility; and a caller-clocked expiration helper where `now == expires_at` is expired. It also implements the identifier/capability primitives and the constrained metadata schema above. No Share content model, persistence operation, lifecycle state, or CRUD API exists yet.
+Phase 2 retains the closed domain primitives and caller-clocked expiration helper where `now == expires_at` is expired. It now implements transactional Standard Text creation, shared active loading for JSON/raw reads, owner-capability mutation, physical cascade deletion, and the separate constrained payload table. Expired rows remain physically present but cannot be read, updated, deleted, or revived through application operations. There is still no persisted lifecycle state, encrypted payload, File payload, listing, or cleanup operation.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const latestSchemaVersion = 1
+const latestSchemaVersion = 2
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
@@ -19,6 +19,7 @@ type migration struct {
 
 var migrations = []migration{
 	{1, "migrations/0001_shares.sql"},
+	{2, "migrations/0002_standard_text_payloads.sql"},
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

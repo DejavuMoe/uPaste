@@ -33,6 +33,6 @@ These names describe behavior, not a required database enum. No lifecycle `state
 
 ## Delivery phases
 
-- **Current Phase 1:** domain, identifier/capability, configuration, hardened SQLite, metadata schema, and migration foundations plus the existing health endpoint and frontend shell.
-- **Approved future direction:** Share CRUD and payload persistence, capability-authorized management, encrypted text, and separated Standard file delivery.
-- **Out of scope now:** all Share content operations and production packaging. Features excluded above require an explicit later decision.
+- **Current Phase 2:** Standard Text Share create, public JSON/raw read, owner update/delete, expiration enforcement, and persistence for `PLAIN`, `SOURCE`, and `MARKDOWN` text without rendering.
+- **Approved future direction:** encrypted text and separated Standard file delivery, plus expiration cleanup and deployment hardening.
+- **Out of scope now:** File Shares, encrypted text, public listing/search, accounts, frontend product behavior, and production packaging. Features excluded above require an explicit later decision.

@@ -12,7 +12,7 @@ These are mandatory design constraints. Later implementation must fail closed wh
 8. Encrypted text is encrypted in the browser. The server stores ciphertext and never receives plaintext. The decryption key lives in the URL fragment and is never intentionally transmitted to the server.
 9. Markdown raw HTML is disabled.
 10. Any future Markdown HTML output also passes through sanitization as defense in depth.
-11. `/raw/:id` is always inert plain text with `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff`, and a restrictive Content Security Policy.
+11. `/raw/{id}` is always inert plain text with `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff`, and a restrictive Content Security Policy.
 12. Uploaded untrusted files are served from a separate web origin and listener from the application/API. Host-header checks alone are insufficient.
 13. Active uploaded formats such as HTML, SVG, XML, and JavaScript never execute with application-origin authority.
 14. File delivery defaults to attachment unless the detected MIME type is explicitly classified safe for inline delivery.
@@ -29,7 +29,11 @@ These are mandatory design constraints. Later implementation must fail closed wh
 - V1 stores `SHA-256(canonical_owner_token)`, not the token. A server-side pepper/HMAC key is intentionally omitted: exhaustive attack against a uniform 256-bit token is infeasible, while another critical secret would create key-loss, rotation, and recovery failure modes. A keyed verifier can be introduced if evidence changes this tradeoff.
 - Verification uses constant-time digest comparison after canonical candidate parsing. Share ID and owner token generation are independent.
 
-Phase 1 implements these primitives but no management endpoint or persisted owner-token flow. Its SQLite connections enable foreign keys, WAL, a five-second busy timeout, NORMAL synchronization, defensive mode, and disabled double-quoted-string fallback on every physical connection. The metadata schema constrains owner verifiers to 32-byte BLOBs.
+Phase 2 uses these primitives for owner-authorized PATCH/DELETE. Only the creation response reveals the token; management accepts exactly one `Authorization: Bearer` header and never URL/body/cookie credentials. Persistence receives only the verifier. Valid-form candidates use constant-time digest comparison, and handlers/logs never echo candidates.
+
+SQLite connections enable foreign keys, WAL, a five-second busy timeout, NORMAL synchronization, defensive mode, and disabled double-quoted-string fallback on every physical connection. The metadata schema constrains owner verifiers to 32-byte BLOBs.
+
+Standard Text request JSON has a 2 MiB wire limit and decoded content has a matching application/SQL range of 1–1,048,576 UTF-8 bytes. Public API responses are `no-store` and `nosniff`. `/raw/{id}` always emits exact inert `text/plain` bytes with `nosniff`, `no-store`, no-referrer, frame denial, and a restrictive sandboxed CSP; its errors receive the same headers. JSON uses normal escaping and Markdown is not rendered.
 
 Content encryption will use Web Crypto AES-GCM. Exact encrypted-text wire encoding, CSP, and upload policy still require later review. Encrypted files require a separate design covering streaming, bounded memory, authenticated chunking, resumability, integrity, and key handling.
 

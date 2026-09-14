@@ -8,20 +8,29 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/DejavuMoe/uPaste/internal/config"
 	"github.com/DejavuMoe/uPaste/internal/database"
+	"github.com/DejavuMoe/uPaste/internal/httpapi"
+	"github.com/DejavuMoe/uPaste/internal/share"
 )
 
-func newHandler() http.Handler {
+func newHandler(api http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write([]byte("{\"status\":\"ok\"}\n"))
 	})
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if api != nil && (strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/raw" || strings.HasPrefix(r.URL.Path, "/raw/")) {
+			api.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func main() {
@@ -50,13 +59,15 @@ func run(log *slog.Logger) (err error) {
 		}
 	}()
 
+	shareService := share.New(db, time.Now)
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           newHandler(),
+		Handler:           newHandler(httpapi.New(shareService, log)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 << 10,
 	}
 
 	go func() {
