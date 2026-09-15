@@ -21,10 +21,13 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 | `make build` | Full production build: TypeScript check, Vite build, clean embedding staging, then a single `-tags production` Go binary at `./upaste`. |
 | `make prove-embedded` | `make build`, then run the isolated-binary proof (binary alone, fresh data dir, no `web/dist`). |
 | `make e2e` | Existing 35-test Vite-backed real-browser suite. |
-| `make prod-e2e` | Embedded-production real-browser suite against the built binary (no Vite). |
+| `make prod-e2e` | Embedded-production real-browser suite against the built binary (no Vite), including the throttled slow-upload CSP/progress check. |
+| `make dist VERSION=v0.1.0` | Build deterministic `linux/amd64` and `linux/arm64` release archives plus `SHA256SUMS` under `release/`. |
+| `make verify-dist VERSION=v0.1.0` | Verify checksums, archive shape, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild. |
+| `make deploy-check` | Validate the systemd unit and two-origin reverse-proxy examples, including `systemd-analyze verify` when available. |
 | `make dev-backend` | Run the API and File listeners without the embedded frontend. |
 | `make dev-frontend` | Run Vite's development server for the UI. |
-| `make clean` | Remove generated binaries, frontend output, and embedding staging. |
+| `make clean` | Remove generated binaries, frontend output, embedding staging, and release archives. |
 
 Before committing run `make format`, `make check`, `make test`, and `make build`, then inspect the diff, staged files, and status for secrets or artifacts.
 
@@ -45,12 +48,71 @@ Generated and ignored paths:
 upaste                        # production executable
 web/dist/                     # Vite output
 internal/webapp/dist/         # embedding staging, rebuilt on every production build
+release/                      # deterministic release archives and checksums
 web/playwright-report/        # Playwright reports
 web/test-results/             # Playwright artifacts
 data/                         # default runtime database/objects
 ```
 
 These are never sources of truth and are safe to delete; `make clean` removes them.
+
+## Build metadata and version command
+
+`internal/buildinfo` is the only build-metadata boundary. Development builds
+report `devel`, `unknown`, and `unknown`; release tooling injects deterministic
+values with Go linker `-X` flags:
+
+```text
+github.com/DejavuMoe/uPaste/internal/buildinfo.Version
+github.com/DejavuMoe/uPaste/internal/buildinfo.Commit
+github.com/DejavuMoe/uPaste/internal/buildinfo.BuildDate
+```
+
+```sh
+./upaste --version
+./upaste -version
+```
+
+Both forms print the same stable output and return before configuration parsing,
+SQLite initialization, data-directory creation, listener binding, or
+maintenance. Unknown flags and combined invalid flags still fail normal CLI
+parsing. There is no HTTP version endpoint.
+
+## Release packaging
+
+`scripts/package-release.sh` is the canonical packaging implementation behind
+`make dist`. It validates `VERSION` as `vMAJOR.MINOR.PATCH` with optional
+prerelease/build suffixes, resolves the exact commit, derives
+`SOURCE_DATE_EPOCH` from that commit unless explicitly provided, builds the
+frontend once, stages the embedding directory, then cross-compiles `linux/amd64`
+and `linux/arm64` with `CGO_ENABLED=0`, `-tags production`, `-trimpath`, and
+deterministic metadata.
+
+Each archive has this shape:
+
+```text
+upaste-<version>-linux-<arch>/
+  upaste
+  README.md
+  DEPLOYMENT.md
+  upaste.service
+  upaste.env.example
+  nginx.conf.example
+  Caddyfile.example
+```
+
+`SHA256SUMS` covers both archives. Archives normalize ordering, ownership,
+permissions, timestamps, and gzip headers, so the same inputs produce identical
+amd64 bytes. `scripts/verify-release.sh` (and `make verify-dist`) checks the
+checksums, archive shape, embedded version/commit strings, AArch64 ELF identity,
+amd64 `--version`, embedded frontend and health endpoint, API and File-origin
+create/download behavior, clean `SIGTERM` shutdown, restart persistence, and a
+deterministic amd64 rebuild. It creates no tag and no GitHub Release.
+
+The release workflow at `.github/workflows/release.yml` is draft-only and
+triggers on `v*` tags or a manual dispatch. It validates tag/version/commit
+integrity before creating a draft release. Ordinary master CI runs packaging
+with a synthetic `v0.0.0-test` version and never publishes.
 
 ## Runtime configuration
 
@@ -110,4 +172,4 @@ curl -i http://127.0.0.1:8080/
 
 ## CI
 
-CI has four jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs `go vet -tags production ./...` and `go test -tags production ./...`, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded-production browser suite. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
+CI has five jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs `go vet -tags production ./...` and `go test -tags production ./...`, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded-production browser suite (including the slow-upload CSP/progress qualification). `release` validates deployment examples and the systemd unit, then runs `scripts/package-release.sh` and `scripts/verify-release.sh` with the synthetic `v0.0.0-test` version so packaging, checksums, arm64 packaging, amd64 runtime, restart persistence, and deterministic rebuilds are exercised without publishing anything. Action references are immutable SHAs annotated with their upstream major tag in the workflow.

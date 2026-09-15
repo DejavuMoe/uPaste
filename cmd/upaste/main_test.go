@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -115,5 +120,51 @@ func TestNilFrontendKeepsDevelopmentShape(t *testing.T) {
 		if recorder.Code != http.StatusNotFound {
 			t.Fatalf("%s status = %d, want 404 without embedded frontend", path, recorder.Code)
 		}
+	}
+}
+
+func TestVersionFlagIsSideEffectFree(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "not-created")
+	t.Setenv("UPASTE_DATA_DIR", dataDir)
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	for _, flag := range []string{"--version", "-version"} {
+		t.Run(flag, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := run(log, []string{flag}, &output); err != nil {
+				t.Fatalf("run(%q) error = %v", flag, err)
+			}
+			got := output.String()
+			if !strings.HasPrefix(got, "uPaste devel\n") {
+				t.Fatalf("version output = %q, want development version line", got)
+			}
+			if !strings.Contains(got, "commit: unknown\n") || !strings.Contains(got, "built: unknown\n") || !strings.Contains(got, "go: go") {
+				t.Fatalf("version output missing metadata: %q", got)
+			}
+			if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("data directory %q was created by --version", dataDir)
+			}
+		})
+	}
+}
+
+func TestVersionFlagRejectsCombinedAndUnknownFlags(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "not-created")
+	t.Setenv("UPASTE_DATA_DIR", dataDir)
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	for _, args := range [][]string{{"--version", "--bogus"}, {"--bogus"}, {"--version", "-addr", "127.0.0.1:9999"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var output bytes.Buffer
+			if err := run(log, args, &output); err == nil {
+				t.Fatalf("run(%v) error = nil, want flag error", args)
+			}
+			if output.Len() != 0 {
+				t.Fatalf("run(%v) wrote version output despite invalid flags: %q", args, output.String())
+			}
+			if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("data directory %q was created by invalid flags", dataDir)
+			}
+		})
 	}
 }

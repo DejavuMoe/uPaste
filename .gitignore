@@ -13,6 +13,8 @@ node_modules/
 web/dist/
 # Generated frontend embedding staging (rebuilt by make build)
 internal/webapp/dist/
+# Generated release artifacts (rebuilt by scripts/package-release.sh)
+release/
 web/playwright-report/
 web/test-results/
 /upaste

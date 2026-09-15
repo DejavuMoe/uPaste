@@ -4,7 +4,7 @@ uPaste is a self-hosted application for sharing text and files. Security, reliab
 
 ## Current status
 
-Phase 8 is complete. The production React frontend is built by Vite and embedded in the Go application binary, so the normal production artifact is one self-contained executable plus a local data directory.
+Phase 9 is complete: uPaste is a versionable single binary with deterministic Linux release packaging, native systemd deployment, two-origin reverse-proxy examples, and operational upgrade/backup guidance. No version tag or GitHub Release has been created; release tooling is prepared only.
 
 Implemented:
 
@@ -14,8 +14,10 @@ Implemented:
 - Synchronous expiration enforcement and asynchronous purge/reconciliation.
 - Process-local, trusted-proxy-aware rate limiting and File concurrency gates.
 - Production React UI embedded in the Go binary with strict SPA routing, immutable asset caching, and a restrictive CSP.
+- Deterministic `linux/amd64` and `linux/arm64` release archives with SHA-256 checksums and embedded version/commit/build metadata.
+- Native systemd service, example environment file, and Nginx/Caddy two-origin reverse-proxy examples.
 
-Not implemented: Encrypted File Shares, public listing/search, accounts, malware scanning, hard storage quotas, distributed rate limiting, and deployment packaging (Docker, systemd, release archives). See [docs/PRODUCT.md](docs/PRODUCT.md) for the frozen V1 scope.
+Not implemented: Encrypted File Shares, public listing/search, accounts, malware scanning, hard storage quotas, distributed rate limiting, Docker/container packaging, and automatic updates. See [docs/PRODUCT.md](docs/PRODUCT.md) for the frozen V1 scope.
 
 ## Quick start
 
@@ -25,6 +27,7 @@ Install [mise](https://mise.jdx.dev/), then:
 mise install
 make install
 make check test build    # build creates ./upaste with the embedded frontend
+./upaste --version
 ./upaste                 # application and File listeners
 
 make dev-backend         # API/File listeners without the embedded UI
@@ -58,6 +61,47 @@ Application origin:
 
 File origin (separate listener): `/f/:id` only, always served as an attachment. The application listener never serves File bytes and returns 404 for `/f/*`.
 
+## Release artifacts
+
+`upaste --version` prints stable build metadata without touching configuration, SQLite, listeners, or maintenance:
+
+```text
+uPaste v0.1.0
+commit: <full-git-sha>
+built: <deterministic-utc-timestamp>
+go: go1.27.1
+```
+
+Build deterministic release archives for `linux/amd64` and `linux/arm64`:
+
+```sh
+make dist VERSION=v0.1.0
+make verify-dist VERSION=v0.1.0
+```
+
+`release/` receives `upaste-v0.1.0-linux-amd64.tar.gz`, `upaste-v0.1.0-linux-arm64.tar.gz`, and `SHA256SUMS`. Each archive contains `upaste`, `README.md`, `DEPLOYMENT.md`, `upaste.service`, `upaste.env.example`, `nginx.conf.example`, and `Caddyfile.example`. Archives use normalized ownership, permissions, ordering, timestamps, and gzip headers; `make verify-dist` checks checksums, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild.
+
+A draft-only GitHub release workflow exists at `.github/workflows/release.yml` for future `v*` tags. It was not triggered by this phase: no version tag and no GitHub Release were created.
+
+## Native deployment in brief
+
+The supported production deployment is native Linux with systemd and a trusted reverse proxy for two distinct origins:
+
+```text
+https://paste.example.com  -> 127.0.0.1:8080   frontend, API, raw, healthz
+https://files.example.com  -> 127.0.0.1:8081   /f/:id attachments only
+```
+
+1. Verify the archive checksum and extract it.
+2. Install `upaste` to `/usr/local/bin/upaste` as `root:root 0755`.
+3. Create the unprivileged `upaste` user/group and `/var/lib/upaste` (`upaste:upaste 0700`).
+4. Install `upaste.env.example` as `/etc/upaste/upaste.env` (`root:upaste 0640`) and set `UPASTE_FILE_ORIGIN` to the public File origin.
+5. Install `upaste.service` as `/etc/systemd/system/upaste.service`, then `systemctl enable --now upaste`.
+6. Terminate TLS at the reverse proxy using the Nginx or Caddy example.
+7. Verify `curl -fsS http://127.0.0.1:8080/healthz`.
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for installation, permissions, firewall, backup, restore, upgrade, rollback, and troubleshooting details.
+
 ## Development vs production frontend
 
 - Development: `make dev-backend` plus `make dev-frontend`. Vite serves the UI and proxies `/api` and `/raw` to the Go server.
@@ -68,6 +112,7 @@ File origin (separate listener): `/f/:id` only, always served as an attachment. 
 - [Product scope](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [HTTP API](docs/API.md)
+- [Native deployment](docs/DEPLOYMENT.md)
 - [Development guide](docs/DEVELOPMENT.md)
 - [Security invariants](docs/SECURITY.md)
 - [Threat model](docs/THREAT_MODEL.md)

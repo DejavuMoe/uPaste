@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DejavuMoe/uPaste/internal/abuse"
+	"github.com/DejavuMoe/uPaste/internal/buildinfo"
 	"github.com/DejavuMoe/uPaste/internal/config"
 	"github.com/DejavuMoe/uPaste/internal/database"
 	"github.com/DejavuMoe/uPaste/internal/fileapi"
@@ -57,14 +59,28 @@ func newHandler(api http.Handler, frontend http.Handler) http.Handler {
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(log); err != nil {
+	if err := run(log, os.Args[1:], os.Stdout); err != nil {
 		log.Error("application failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) (err error) {
-	cfg, err := config.Parse(os.Args[1:], os.LookupEnv)
+// maybePrintVersion handles the operator version command without touching
+// configuration, SQLite, listeners, or maintenance. It accepts exactly one
+// version flag so unknown or combined flags continue through normal parsing.
+func maybePrintVersion(args []string, stdout io.Writer) (bool, error) {
+	if len(args) != 1 || (args[0] != "--version" && args[0] != "-version") {
+		return false, nil
+	}
+	_, err := io.WriteString(stdout, buildinfo.Current().String())
+	return true, err
+}
+
+func run(log *slog.Logger, args []string, stdout io.Writer) (err error) {
+	if handled, versionErr := maybePrintVersion(args, stdout); handled {
+		return versionErr
+	}
+	cfg, err := config.Parse(args, os.LookupEnv)
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
 	}

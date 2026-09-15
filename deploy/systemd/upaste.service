@@ -1,0 +1,44 @@
+[Unit]
+Description=uPaste self-hosted text and file sharing
+Documentation=https://github.com/DejavuMoe/uPaste
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=upaste
+Group=upaste
+WorkingDirectory=/var/lib/upaste
+EnvironmentFile=/etc/upaste/upaste.env
+ExecStart=/usr/local/bin/upaste
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+
+# Runtime hardening. uPaste only needs loopback TCP listeners below port 1024
+# and a writable data directory, so capabilities and most kernel surfaces are
+# removed.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/upaste
+
+[Install]
+WantedBy=multi-user.target

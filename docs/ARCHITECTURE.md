@@ -1,6 +1,6 @@
 # Architecture
 
-## Current implementation (through Phase 8)
+## Current implementation (through Phase 9)
 
 uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, opens local object storage, then starts two Go `net/http` processes using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check.
 
@@ -54,6 +54,14 @@ Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none';
 
 The policy requires no `unsafe-eval`, wildcard sources, external script hosts, or external font hosts. File downloads remain direct navigations to the separately configured File origin, which has its own attachment/CSP/no-store/no-referrer/nosniff/frame-denial policy.
 
+## Build metadata and release packaging
+
+`internal/buildinfo` is the single build-metadata boundary. Development builds report `devel` / `unknown` / `unknown`; release builds inject `Version`, `Commit`, and a deterministic `BuildDate` with linker `-X` values. `upaste --version` prints that metadata and exits before configuration parsing, SQLite initialization, data-directory creation, listener binding, or maintenance.
+
+`scripts/package-release.sh` builds the Vite bundle once, cleans and stages `internal/webapp/dist`, then cross-compiles `linux/amd64` and `linux/arm64` with `CGO_ENABLED=0 -tags production -trimpath`. It emits deterministic `tar.gz` archives plus `SHA256SUMS` under the Git-ignored `release/` directory. `scripts/verify-release.sh` checks checksums, archive shape and contents, embedded version/commit strings, AArch64 ELF identity, amd64 standalone runtime, restart persistence, and a deterministic rebuild.
+
+The supported native deployment is one unprivileged `upaste` systemd service with loopback-only listeners, persistent state under `/var/lib/upaste`, and TLS plus two distinct public origins at a trusted reverse proxy. `docs/DEPLOYMENT.md` is the authoritative operator guide; `deploy/` contains the systemd, environment, Nginx, and Caddy examples.
+
 ## Persistence foundation
 
 The database is `<data-dir>/upaste.db`; local File objects are `<data-dir>/objects/<first-two-hex>/<remaining-hex-key>`. Local storage opens this root once with Go `os.Root`; stage, finalization, reads, deletion, and reconciliation stay confined to that handle even if the pathname is later replaced. New object directories/files use `0700`/`0600`; server-generated 16-byte hex object keys and filenames never become public filesystem paths. New data directories and database files are created with `0700` and `0600` permissions respectively; existing operator-managed permissions are not weakened. SQLite uses `modernc.org/sqlite` v1.58.0 (SQLite 3.53.4, `modernc.org/libc` v1.75.6) through `database/sql`, with no CGO or ORM.
@@ -92,8 +100,8 @@ Phase 6 froze the frontend product architecture, routes (`/`, `/s/:id`, `/manage
 
 ## Approved future architecture
 
-The deployable shape remains one Go binary, one SQLite database, one local object store, and two listeners. A future S3-compatible `Store` implementation may replace Local storage when that boundary is needed. Reverse-proxy routing must provide separate origins and must not rely only on `Host`; TLS normally terminates at a trusted reverse proxy. Deployment and release packaging remain future work.
+The deployable shape remains one Go binary, one SQLite database, one local object store, and two listeners. A future S3-compatible `Store` implementation may replace Local storage when that boundary is needed. Reverse-proxy routing must provide separate origins and must not rely only on `Host`; TLS normally terminates at a trusted reverse proxy. Native systemd deployment and deterministic Linux release packaging are implemented; container packaging and actual public release publication remain future work.
 
 ## Not implemented
 
-Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, Docker/release/deployment packaging, and service-manager/ingress configuration remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
+Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, Docker/container packaging, and automatic updates remain later work. Native systemd deployment and deterministic amd64/arm64 release packaging are implemented; no public version tag or GitHub Release exists yet. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.

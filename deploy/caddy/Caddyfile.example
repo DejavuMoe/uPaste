@@ -1,0 +1,30 @@
+# uPaste two-origin reverse-proxy example for Caddy.
+#
+# Replace the example hostnames. Caddy obtains and renews TLS certificates
+# automatically when the hostnames resolve and ports 80/443 are reachable.
+# Caddy is an alternative to the Nginx example, not a mandatory dependency.
+
+# Application origin: frontend, API, raw text, healthz.
+paste.example.com {
+    reverse_proxy 127.0.0.1:8080 {
+        header_up Host {host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        flush_interval -1
+    }
+    request_body {
+        max_size 70MiB
+    }
+}
+
+# File origin: attachments only, served by the separate uPaste listener.
+files.example.com {
+    reverse_proxy 127.0.0.1:8081 {
+        header_up Host {host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        flush_interval -1
+    }
+    @notfiles not path /f/*
+    respond @notfiles 404
+}

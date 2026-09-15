@@ -107,3 +107,30 @@ jobs:
         env:
           UPASTE_BINARY: ${{ github.workspace }}/upaste
         run: pnpm --dir web e2e:production
+
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.34.5
+          run_install: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm --dir web install --frozen-lockfile
+      - name: Validate native deployment and reverse-proxy examples
+        run: ./scripts/check-deployment.sh
+      - name: Build deterministic synthetic release packages
+        run: ./scripts/package-release.sh v0.0.0-test "$RUNNER_TEMP/upaste-release"
+      - name: Verify packages, runtime, and deterministic rebuild
+        run: ./scripts/verify-release.sh v0.0.0-test "$RUNNER_TEMP/upaste-release"

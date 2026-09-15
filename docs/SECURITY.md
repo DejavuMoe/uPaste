@@ -61,7 +61,15 @@ The production React bundle is built by Vite and embedded in the Go application 
 default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'
 ```
 
-The policy has no `unsafe-eval`, no wildcard source, and no external script or font origin. Embedded asset content types come from the generated extensions, never from request input or user-controlled filenames. Markdown external links remain ordinary navigations and do not gain script, frame, or form privileges. The separate File origin and attachment-only File semantics are unchanged.
+The policy has no `unsafe-eval`, no wildcard source, and no external script or font origin. `style-src 'self'` is deliberately kept strict; the dynamic upload progress indicator is qualified under a throttled multi-megabyte upload and must not be replaced with `unsafe-inline`. Embedded asset content types come from the generated extensions, never from request input or user-controlled filenames. Markdown external links remain ordinary navigations and do not gain script, frame, or form privileges. The separate File origin and attachment-only File semantics are unchanged.
+
+## Native deployment and release integrity
+
+Release binaries for `linux/amd64` and `linux/arm64` are built from the exact source revision with `CGO_ENABLED=0 -tags production -trimpath` and deterministic version/commit/build-date metadata injected by the linker. Release archives and `SHA256SUMS` are generated from normalized inputs; operators must verify the checksum before installing. There is no automatic updater: the application never fetches or executes updates.
+
+The supported systemd unit runs as an unprivileged `upaste` user, loads `/etc/upaste/upaste.env`, writes only `/var/lib/upaste`, uses `UMask=0077`, and applies hardening including `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true`, empty capability sets, and restricted address families. Both listeners remain loopback-only; TLS terminates at a trusted reverse proxy with two distinct public origins. `UPASTE_TRUSTED_PROXY_CIDRS` must contain only the directly connected proxy, never `0.0.0.0/0` or `::/0`.
+
+Backups must capture the complete data tree (`upaste.db`, any SQLite side files, and `objects/`) in a cold, consistent state. Database migrations are forward-only, so binary-only rollback is safe only when no schema advancement has occurred; otherwise restore the pre-upgrade backup. No license has been selected or implied by the release tooling.
 
 ## Repository secret policy
 
