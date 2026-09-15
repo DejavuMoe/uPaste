@@ -51,6 +51,18 @@ Local objects use server-generated keys and restrictive `0700` object directorie
 
 Zero knowledge covers an honest server running the reviewed protocol: it does not receive plaintext or key. It does not protect against malicious modified JavaScript from the host, a compromised browser or extension, stolen fragments, traffic metadata, IP/timing/ciphertext-size observation, server-controlled expiration, or owner-capability misuse. Encrypted files require a separate design covering streaming, bounded memory, authenticated chunking, resumability, integrity, and key handling.
 
+## Embedded production frontend boundary
+
+The production React bundle is built by Vite and embedded in the Go application binary. `internal/webapp/dist/` is generated staging ignored by Git; the production build replaces it from scratch, so it is never source of truth and a clean checkout never embeds a stale bundle. The application listener serves only the frozen SPA entry shapes `/`, `/s/:id`, and `/manage/:id`, plus embedded static files. Unknown routes, missing `/assets/*` files, and `/f/*` return 404 rather than a blanket SPA fallback. Only GET and HEAD are accepted for frontend resources; other methods receive 405 on known routes/assets and 404 elsewhere.
+
+`index.html` and SPA responses use `Cache-Control: no-store`; hashed Vite assets under `/assets/` use `Cache-Control: public, max-age=31536000, immutable`. Every embedded frontend response sets `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, and this CSP:
+
+```text
+default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'
+```
+
+The policy has no `unsafe-eval`, no wildcard source, and no external script or font origin. Embedded asset content types come from the generated extensions, never from request input or user-controlled filenames. Markdown external links remain ordinary navigations and do not gain script, frame, or form privileges. The separate File origin and attachment-only File semantics are unchanged.
+
 ## Repository secret policy
 
 This public repository must never contain real credentials, tokens, private keys, databases, uploaded content, `.env` files, secrets, or private IDE state. Examples, if introduced, use conspicuously fake values. Before every commit, inspect staged changes and scan for accidental secrets. Runtime secrets come from deployment configuration outside Git; they must not be printed.

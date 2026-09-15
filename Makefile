@@ -1,4 +1,4 @@
-.PHONY: format check test build dev-backend dev-frontend install
+.PHONY: format check test build e2e prod-e2e prove-embedded dev-backend dev-frontend install clean
 
 format:
 	mise exec -- ./scripts/gofmt write
@@ -12,9 +12,19 @@ test:
 	mise exec -- go test ./...
 	mise exec -- pnpm --dir web test
 
+# Complete production build: TypeScript check + Vite build, clean embed staging,
+# then Go compilation with -tags production. Produces ./upaste.
 build:
-	mise exec -- go build ./cmd/upaste
-	mise exec -- pnpm --dir web build
+	mise exec -- ./scripts/build-production-binary.sh
+
+e2e:
+	mise exec -- pnpm --dir web e2e
+
+prod-e2e:
+	mise exec -- pnpm --dir web e2e:production
+
+prove-embedded: build
+	mise exec -- ./scripts/prove-embedded-binary.sh ./upaste
 
 install:
 	mise exec -- pnpm --dir web install --frozen-lockfile
@@ -24,3 +34,6 @@ dev-backend:
 
 dev-frontend:
 	mise exec -- pnpm --dir web dev
+
+clean:
+	rm -rf internal/webapp/dist web/dist upaste web/playwright-report web/test-results

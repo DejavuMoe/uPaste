@@ -33,7 +33,9 @@ These names describe behavior, not a required database enum. No lifecycle `state
 
 ## Delivery phases
 
-- **Server Foundation (Phases 1–5.1):** Standard/Encrypted Text plus Standard File create, public metadata read, owner update/delete, expiration enforcement, separated attachment-only File delivery, local object storage, maintenance purge/reconciliation, and process-local rate limiting.
-- **Current Phase 6:** Frontend product contract, wireframes, interaction state matrix, visual design system, and implementation architecture frozen ([FRONTEND_PRODUCT_SPEC](FRONTEND_PRODUCT_SPEC.md), [FRONTEND_INTERACTION_SPEC](FRONTEND_INTERACTION_SPEC.md), [FRONTEND_VISUAL_SPEC](FRONTEND_VISUAL_SPEC.md), and [ADR 0013](adr/0013-frontend-product-architecture.md)).
-- **Approved future direction:** Phase 7 production React UI implementation and deployment hardening.
-- **Out of scope now:** Encrypted Files, public listing/search, accounts, and production packaging. Features excluded above require an explicit later decision.
+- **Server Foundation (Phases 1–5.1, complete):** Standard/Encrypted Text plus Standard File create, public metadata read, owner update/delete, expiration enforcement, separated attachment-only File delivery, local object storage, maintenance purge/reconciliation, and process-local rate limiting.
+- **Phase 6 (complete):** Frontend product contract, wireframes, interaction state matrix, visual design system, and implementation architecture frozen ([FRONTEND_PRODUCT_SPEC](FRONTEND_PRODUCT_SPEC.md), [FRONTEND_INTERACTION_SPEC](FRONTEND_INTERACTION_SPEC.md), [FRONTEND_VISUAL_SPEC](FRONTEND_VISUAL_SPEC.md), and [ADR 0013](adr/0013-frontend-product-architecture.md)).
+- **Phase 7 (complete):** Production React UI implementation with unit, component, real-browser E2E, and 5-viewport × 2-theme visual qualification.
+- **Phase 8 (complete):** Production frontend embedding and integration: the Vite bundle is embedded in the Go executable, the application listener serves the SPA with strict routing/cache/security headers, and the self-contained binary is qualified without Vite or external frontend files.
+- **Future direction:** Deployment and release packaging, deployment hardening, and any explicitly approved scope expansion.
+- **Out of scope now:** Encrypted Files, public listing/search, accounts, malware scanning, hard storage quotas, distributed rate limiting, and deployment packaging. Features excluded above require an explicit later decision.

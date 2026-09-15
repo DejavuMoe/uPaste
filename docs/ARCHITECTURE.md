@@ -1,29 +1,58 @@
 # Architecture
 
-## Current Phase 5 implementation
+## Current implementation (through Phase 8)
 
-uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, then starts a Go `net/http` process using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check. Phase 4 adds Standard File multipart create/read/owner-expiration-update/delete behavior. Files are delivered only from a second listener; Standard raw remains available while Encrypted raw returns 409. `web/` remains an independently built shell without product UI, plus a React-independent Web Crypto protocol module.
+uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, opens local object storage, then starts two Go `net/http` processes using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check.
+
+The application listener serves the embedded production React frontend, `/api/v1/*`, `/raw/*`, and `/healthz`. The independent File listener serves only `/f/{id}` as an attachment. File bytes are never served from the application origin and `/f/*` returns 404 there.
 
 The implemented internal packages are deliberately limited:
 
 - `domain`: closed V1 classifications, privacy compatibility, and pure expiration semantics.
 - `capability`: canonical random Share IDs and owner capabilities plus SHA-256 verification.
-- `config`: CLI/environment/default resolution for address and data directory.
+- `config`: CLI/environment/default resolution for addresses, File origin, trusted proxies, and data directory.
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
 - `share`: concrete transactional Standard/Encrypted Text and Standard File behavior using an injected clock.
 - `httpapi`: strict Go JSON v2 and multipart creation, bearer authorization, and application API responses.
 - `fileapi`: isolated attachment-only File listener with a bounded response deadline.
+- `webapp`: embedded production frontend access, SPA route resolution, static asset delivery, cache policy, and frontend security headers.
 - `objectstore`: `Store` staging/commit/open/delete boundary; `Local` is the current implementation.
 - `maintenance`: deterministic purge/reconciliation pass plus one periodic worker.
 - `abuse`: trusted-proxy client identity, bounded process-local limiters, and File gates.
 
-There is no generic repository layer, encrypted File behavior, encrypted product UI, embedded frontend, distributed limiter, or storage quota yet.
+There is no generic repository layer, encrypted File behavior, distributed limiter, or storage quota. The production React UI is implemented and embedded; development still serves the UI from the Vite development server.
 
 The browser module `web/src/crypto/encryptedText.ts` owns key generation, AES-256-GCM encryption/decryption, the binary plaintext envelope, and strict key-fragment/base64url handling. The HTTP server never decrypts and has no production AES key handling. API responses model Standard, Encrypted, and File payloads explicitly so irrelevant zero-valued fields are never serialized.
 
 Ordinary application requests retain 15-second read/write deadlines. Valid bounded File multipart uploads extend their body read and eventual response write deadlines to 10 minutes; File GET/HEAD extend only their response write deadline to 10 minutes. Header reads remain 5 seconds, idle connections 60 seconds, and headers 32 KiB.
 
-The app listener defaults to `127.0.0.1:8080`; the independent file listener defaults to `127.0.0.1:8081`; their equal-address configuration is rejected. Configured `file-origin`, default `http://127.0.0.1:8081`, is the only public File URL base. File delivery never branches on Host or forwarded headers.
+The app listener defaults to `127.0.0.1:8080`; the independent File listener defaults to `127.0.0.1:8081`; their equal-address configuration is rejected. Configured `file-origin`, default `http://127.0.0.1:8081`, is the only public File URL base. File delivery never branches on Host or forwarded headers.
+
+## Production frontend delivery
+
+The Vite production bundle is compiled into the Go executable. `scripts/build-production-binary.sh` runs the TypeScript check and Vite build, replaces the Git-ignored staging directory `internal/webapp/dist/`, and compiles with `-tags production`. The production-tagged `internal/webapp` file owns `//go:embed all:dist`; the default `!production` build returns no embedded handler so a clean checkout can still run `go test ./...`, `make check`, and `make test` without generated assets. `make build` is the canonical single-binary build.
+
+`cmd/upaste` composes request dispatch with explicit precedence:
+
+1. `/healthz` reaches the liveness mux.
+2. `/api/*`, `/raw`, and `/raw/*` reach the API handler.
+3. The embedded `webapp` handler is consulted for everything else.
+4. With no embedded frontend (development build), all non-API paths return 404 and Vite serves the UI.
+
+The `webapp` handler serves `index.html` for exactly `/`, `/index.html`, `/s/:id`, and `/manage/:id`. Unknown routes, `/admin`, `/login`, `/dashboard`, missing `/assets/*` files, and `/f/*` remain 404. Request methods other than GET/HEAD receive 405 on known frontend routes/assets and 404 elsewhere.
+
+`index.html` and SPA fallback responses are `Cache-Control: no-store`. Hashed Vite assets under `/assets/` receive `Cache-Control: public, max-age=31536000, immutable` with extension-appropriate MIME types. HTML, JavaScript, CSS, JSON, images, fonts, and text are served explicitly; unknown extensions fall back to the platform MIME database and then `application/octet-stream`.
+
+Every embedded frontend response carries:
+
+```http
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+X-Frame-Options: DENY
+Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'
+```
+
+The policy requires no `unsafe-eval`, wildcard sources, external script hosts, or external font hosts. File downloads remain direct navigations to the separately configured File origin, which has its own attachment/CSP/no-store/no-referrer/nosniff/frame-denial policy.
 
 ## Persistence foundation
 
@@ -51,18 +80,20 @@ A V1 Share owns exactly one `TEXT` or `FILE` payload. Text may be `STANDARD` or 
 
 The metadata schema contains `id`, `payload_kind`, `privacy_mode`, `owner_token_verifier`, `created_at`, `updated_at`, and nullable `expires_at`. Timestamps are integer Unix milliseconds with UTC semantics. Payload columns are intentionally absent.
 
-## Approved future architecture
-
-The deployable shape remains one Go binary, one SQLite database, one local object store, and two listeners. A future S3-compatible `Store` implementation may replace Local storage when that boundary is needed. The production frontend bundle may later be embedded in the executable.
-
-The same binary already exposes separate loopback listeners for the application/API and untrusted file origin, commonly `127.0.0.1:8080` and `127.0.0.1:8081`. Reverse-proxy routing must provide separate origins and must not rely only on `Host`. TLS normally terminates at a trusted reverse proxy.
+## Maintenance and abuse controls
 
 Maintenance runs once asynchronously after both listeners start and then every 15 minutes. It purges at most 2048 expired rows in 256-row transactions, then snapshots all remaining File references and scans Local objects once. Objects/stages require a 30-minute grace, longer than the 10-minute File deadline; unknown filesystem entries are reported, not removed.
 
-## Phase 6 frontend architecture freeze
+Rate limits, trusted-proxy resolution, and File gates are process-local in-memory state. They complement trusted reverse-proxy and network controls; they are not distributed DDoS protection.
 
-Phase 6 freezes the frontend product architecture, routes (`/`, `/s/:id`, `/manage/:id`), secret non-persistence, and visual language ([ADR 0013](adr/0013-frontend-product-architecture.md) and [FRONTEND_PRODUCT_SPEC](FRONTEND_PRODUCT_SPEC.md)). Production React UI implementation remains Phase 7.
+## Frontend product freeze (historical)
+
+Phase 6 froze the frontend product architecture, routes (`/`, `/s/:id`, `/manage/:id`), secret non-persistence, and visual language ([ADR 0013](adr/0013-frontend-product-architecture.md) and [FRONTEND_PRODUCT_SPEC](FRONTEND_PRODUCT_SPEC.md)). Phase 7 implemented that contract and qualified it with unit, component, real-browser, and visual tests.
+
+## Approved future architecture
+
+The deployable shape remains one Go binary, one SQLite database, one local object store, and two listeners. A future S3-compatible `Store` implementation may replace Local storage when that boundary is needed. Reverse-proxy routing must provide separate origins and must not rely only on `Host`; TLS normally terminates at a trusted reverse proxy. Deployment and release packaging remain future work.
 
 ## Not implemented
 
-Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, production React UI implementation, Docker packaging, and deployment packaging remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.
+Encrypted File APIs/persistence, uploads beyond one-shot 64 MiB Standard Files, hard storage quotas, distributed abuse controls, Docker/release/deployment packaging, and service-manager/ingress configuration remain later work. Kubernetes, microservices, queues, Redis, GraphQL, gRPC, CQRS, and event sourcing are not part of the architecture.

@@ -21,17 +21,34 @@ import (
 	"github.com/DejavuMoe/uPaste/internal/maintenance"
 	"github.com/DejavuMoe/uPaste/internal/objectstore"
 	"github.com/DejavuMoe/uPaste/internal/share"
+	"github.com/DejavuMoe/uPaste/internal/webapp"
 )
 
-func newHandler(api http.Handler) http.Handler {
+// newHandler composes the application listener. Precedence is explicit:
+// API and raw routes always reach the API handler, /healthz always reaches the
+// liveness mux, and only then may the embedded frontend handle a request.
+// A nil frontend preserves the development shape where Vite serves the UI.
+func newHandler(api http.Handler, frontend http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write([]byte("{\"status\":\"ok\"}\n"))
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if api != nil && (strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/raw" || strings.HasPrefix(r.URL.Path, "/raw/")) {
+		switch {
+		case r.URL.Path == "/healthz":
+			mux.ServeHTTP(w, r)
+			return
+		case strings.HasPrefix(r.URL.Path, "/api/"), r.URL.Path == "/raw", strings.HasPrefix(r.URL.Path, "/raw/"):
+			if api == nil {
+				http.NotFound(w, r)
+				return
+			}
 			api.ServeHTTP(w, r)
+			return
+		}
+		if frontend != nil {
+			frontend.ServeHTTP(w, r)
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -75,7 +92,18 @@ func run(log *slog.Logger) (err error) {
 	}()
 	shareService := share.NewWithStore(db, store, time.Now)
 	control := abuse.New(abuse.Config{Trusted: cfg.TrustedProxies})
-	appServer := newServer(cfg.Addr, newHandler(httpapi.NewWithAbuse(shareService, cfg.FileOrigin, log, control)))
+
+	frontend, err := webapp.NewEmbedded()
+	if err != nil {
+		return fmt.Errorf("initialize embedded frontend: %w", err)
+	}
+	if frontend == nil {
+		log.Info("embedded frontend disabled; serve the development UI with the Vite dev server")
+	} else {
+		log.Info("embedded frontend enabled")
+	}
+
+	appServer := newServer(cfg.Addr, newHandler(httpapi.NewWithAbuse(shareService, cfg.FileOrigin, log, control), frontend))
 	fileServer := newServer(cfg.FileAddr, fileapi.NewWithAbuse(shareService, log, control))
 	fileListener, err := net.Listen("tcp", cfg.FileAddr)
 	if err != nil {

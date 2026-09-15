@@ -2,7 +2,7 @@
 
 ## Prerequisites and pinned tools
 
-Install mise. The repository pins Go 1.27.1, Node.js 24.21.0, and pnpm 10.34.5 in `mise.toml`; `web/package.json` also pins pnpm. SQLite is supplied by the pure-Go `modernc.org/sqlite` dependency, so no system SQLite, GCC, or CGO toolchain is required. Browser crypto tests use Vitest 5.0.0 with Node's standards-compatible Web Crypto globals and need no DOM/browser service.
+Install mise. The repository pins Go 1.27.1, Node.js 24.21.0, and pnpm 10.34.5 in `mise.toml`; `web/package.json` also pins pnpm. SQLite is supplied by the pure-Go `modernc.org/sqlite` dependency, so no system SQLite, GCC, or CGO toolchain is required. Browser crypto tests use Vitest 5.0.0 with Node's standards-compatible Web Crypto globals and need no DOM/browser service. Playwright is used for the real-browser suites.
 
 ```sh
 mise install
@@ -17,12 +17,40 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 |---|---|
 | `make format` | Format all project-owned Go source. |
 | `make check` | Fail on unformatted project Go source, run `go vet`, and strict TypeScript checking. |
-| `make test` | Run all Go/SQLite tests and frontend Vitest protocol tests. |
-| `make build` | Build the Go executable and production frontend bundle. |
-| `make dev-backend` | Run the API and initialize its database. |
-| `make dev-frontend` | Run Vite's development server. |
+| `make test` | Run all Go/SQLite tests and frontend Vitest tests. |
+| `make build` | Full production build: TypeScript check, Vite build, clean embedding staging, then a single `-tags production` Go binary at `./upaste`. |
+| `make prove-embedded` | `make build`, then run the isolated-binary proof (binary alone, fresh data dir, no `web/dist`). |
+| `make e2e` | Existing 35-test Vite-backed real-browser suite. |
+| `make prod-e2e` | Embedded-production real-browser suite against the built binary (no Vite). |
+| `make dev-backend` | Run the API and File listeners without the embedded frontend. |
+| `make dev-frontend` | Run Vite's development server for the UI. |
+| `make clean` | Remove generated binaries, frontend output, and embedding staging. |
 
-Generated `upaste`, `web/dist`, dependencies, runtime databases, uploaded data, and local secrets are ignored. Do not commit them. Before committing run `make format`, `make check`, `make test`, and `make build`, then inspect the diff, staged files, and status for secrets or artifacts.
+Before committing run `make format`, `make check`, `make test`, and `make build`, then inspect the diff, staged files, and status for secrets or artifacts.
+
+## Development and production frontend
+
+Development and production frontend serving are deliberately different concerns:
+
+- **Development:** run `make dev-backend` and `make dev-frontend`. The Go application listener serves `/api/v1/*`, `/raw/*`, and `/healthz`; Vite serves the React UI on its own port and proxies `/api` and `/raw` to the backend. The documented development state does not require generated production assets.
+- **Production:** `make build` runs `tsc --noEmit && vite build` in `web/`, replaces the Git-ignored `internal/webapp/dist/` staging directory with the exact Vite output, and compiles `go build -tags production -o upaste ./cmd/upaste`. The resulting executable serves the embedded UI and needs no `web/dist`, Node, or copied assets at runtime.
+
+The production `internal/webapp` implementation is behind the `production` build tag and uses `//go:embed all:dist`. The default `!production` implementation returns no embedded handler, so `go test ./...`, `make check`, and `make test` work from a clean checkout with no generated assets.
+
+`scripts/build-production-binary.sh` is the canonical build implementation used by `make build` and CI. `scripts/prove-embedded-binary.sh` proves self-containment. `scripts/e2e-production-server.sh` starts the embedded binary for Playwright; when `UPASTE_BINARY` is set it uses that prebuilt binary instead of rebuilding.
+
+Generated and ignored paths:
+
+```text
+upaste                        # production executable
+web/dist/                     # Vite output
+internal/webapp/dist/         # embedding staging, rebuilt on every production build
+web/playwright-report/        # Playwright reports
+web/test-results/             # Playwright artifacts
+data/                         # default runtime database/objects
+```
+
+These are never sources of truth and are safe to delete; `make clean` removes them.
 
 ## Runtime configuration
 
@@ -36,21 +64,30 @@ Configuration precedence is CLI, then environment, then default:
 | Trusted proxy CIDRs | `UPASTE_TRUSTED_PROXY_CIDRS` | `-trusted-proxy-cidrs` | empty |
 | Data directory | `UPASTE_DATA_DIR` | `-data-dir` | `./data` |
 
-The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db` and `<data-dir>/objects/`; newly created directories/database/object modes are `0700`/`0600`. File and app addresses must differ. File origin must be an absolute HTTP(S) origin without path, query, fragment, or userinfo; it is never inferred from Host or forwarded headers. Existing operator-managed permissions are preserved. Examples:
+The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db` and `<data-dir>/objects/`; newly created directories/database/object modes are `0700`/`0600`. File and application addresses must differ. File origin must be an absolute HTTP(S) origin without path, query, fragment, or userinfo; it is never inferred from Host or forwarded headers. Existing operator-managed permissions are preserved. Examples:
 
 ```sh
 make dev-backend
+make build && ./upaste
 mise exec -- go run ./cmd/upaste -addr 0.0.0.0:8080 -data-dir /srv/upaste
 UPASTE_DATA_DIR=/tmp/upaste-dev make dev-backend
 ```
 
 The loopback default is intentional. Binding externally requires explicit operator configuration and an appropriate trusted reverse proxy/firewall.
 
+## Runtime routes and headers
+
+The application listener serves the embedded frontend at `/`, `/s/:id`, and `/manage/:id`; it also serves `/api/v1/*`, `/raw/*`, and `/healthz`. `/f/*` is intentionally 404 on the application listener. Unknown frontend paths and missing `/assets/*` files return 404 rather than a blanket SPA fallback. `GET` and `HEAD` are supported for frontend resources; other methods receive 405 on known routes/assets and 404 elsewhere.
+
+`index.html` and SPA fallback responses use `Cache-Control: no-store`. Hashed `/assets/*` files use `Cache-Control: public, max-age=31536000, immutable`. Embedded frontend responses set `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, and a strict CSP documented in [ARCHITECTURE.md](ARCHITECTURE.md) and [SECURITY.md](SECURITY.md).
+
+The File listener remains a separate origin and exposes only `/f/{id}` with attachment-only delivery and its own security headers. Reverse proxies must be configured with distinct origins rather than Host-based multiplexing.
+
 ## Transfer deadlines
 
 Servers keep 5-second header reads, 15-second ordinary read/write deadlines, 60-second idle connections, and 32 KiB headers. A valid multipart File create extends that request body's read deadline and eventual response write deadline to 10 minutes before multipart parsing; File GET/HEAD extends only that response write deadline to 10 minutes before delivery. This bounded exception is needed for the 64 MiB transfer limit and does not add rate limiting or make ordinary JSON slow-body requests long-lived.
 
-Trusted proxy CIDRs are comma-separated and empty by default: forwarded headers are ignored unless the immediate TCP peer matches one. Phase 5 maintenance runs once after listener startup and every 15 minutes; it purges expired rows in bounded batches and reconciles stale Local objects after a 30-minute grace. It has no HTTP/admin endpoint.
+Trusted proxy CIDRs are comma-separated and empty by default: forwarded headers are ignored unless the immediate TCP peer matches one. Maintenance runs once after listener startup and every 15 minutes; it purges expired rows in bounded batches and reconciles stale Local objects after a 30-minute grace. It has no HTTP/admin endpoint.
 
 ## Database and migrations
 
@@ -62,9 +99,10 @@ The pool limit is four open and four idle connections. Write transactions acquir
 
 ```sh
 curl -i http://127.0.0.1:8080/healthz
+curl -i http://127.0.0.1:8080/
 ```
 
-`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard/Encrypted Text and Standard File routes and safe placeholder examples are documented in [API.md](API.md). The file listener is a separate origin and exposes only `/f/{id}`; configure reverse proxies with distinct origins rather than Host-based multiplexing. Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
+`GET /healthz` returns HTTP 200 and `application/json; charset=utf-8`. It is a lightweight liveness endpoint and does not query SQLite. Standard/Encrypted Text and Standard File routes and safe placeholder examples are documented in [API.md](API.md). Request decoding uses Go JSON v2 strict defaults and explicit unknown-member rejection; responses retain the Phase 2 encoder for compatibility. Never put an owner token in a URL or logs; send it only in an Authorization bearer header.
 
 ## Go formatting scope
 
@@ -72,4 +110,4 @@ curl -i http://127.0.0.1:8080/healthz
 
 ## CI
 
-CI runs project-wide formatting, vet, all Go tests/build, a frozen pnpm install, TypeScript checking, Vitest browser-crypto tests in Node's standards-compatible Web Crypto environment, and the frontend build. Pure-Go on-disk SQLite integration tests run without system packages. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
+CI has four jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs `go vet -tags production ./...` and `go test -tags production ./...`, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded-production browser suite. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
