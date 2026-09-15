@@ -107,7 +107,7 @@ describe('ShareRoute', () => {
       'href',
       'http://127.0.0.1:8081/f/file-123'
     );
-    expect(document.title).toBe('invoice-2026.pdf · uPaste');
+    await waitFor(() => expect(document.title).toBe('invoice-2026.pdf · uPaste'));
   });
 
   it('decrypts encrypted text using fragment and never passes fragment to api', async () => {

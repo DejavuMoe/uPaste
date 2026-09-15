@@ -64,6 +64,7 @@ export const ManageRoute: React.FC = () => {
       } else setDecryptAvailable(false);
       setTerminal('ready');
     }).catch((error) => {
+      if (controller.signal.aborted) return;
       if (error instanceof ApiError && error.status === 404) setTerminal('not_found');
       else if (error instanceof ApiError && error.status === 410) setTerminal('expired');
       else setTerminal('server_error');
@@ -113,9 +114,9 @@ export const ManageRoute: React.FC = () => {
 
   const cancel = () => navigate(`/s/${id}${location.hash}`);
 
-  if (terminal === 'not_found' || terminal === 'expired' || terminal === 'server_error' || terminal === 'deleted') return <main className="page-container"><section className="viewer-card" role="alert"><h1>{terminal === 'deleted' ? 'Share deleted' : terminal === 'not_found' ? 'Share not found' : terminal === 'expired' ? 'This share has expired' : 'Service error'}</h1><p>{terminal === 'deleted' ? 'The share is no longer available.' : 'Could not load this share.'}</p><Link className="btn btn-primary" to="/">Create new share</Link></section></main>;
+  if (terminal === 'not_found' || terminal === 'expired' || terminal === 'server_error' || terminal === 'deleted') return <main className="page-container"><section className="viewer-card manage-card" role="alert"><h1>{terminal === 'deleted' ? 'Share deleted' : terminal === 'not_found' ? 'Share not found' : terminal === 'expired' ? 'This share has expired' : 'Service error'}</h1><p>{terminal === 'deleted' ? 'The share is no longer available.' : 'Could not load this share.'}</p><Link className="btn btn-primary" to="/">Create new share</Link></section></main>;
   if (!share) return <main className="page-container"><p>Loading share…</p></main>;
-  if (!token) return <main className="page-container"><section className="viewer-card"><h1>Management token</h1>{message && <p role="alert">{message}</p>}<form onSubmit={(event) => { event.preventDefault(); if (id && tokenInput) { remember(id, tokenInput); setTokenInput(''); } }}><label>Management token<input aria-label="Management token" type={reveal ? 'text' : 'password'} autoComplete="off" spellCheck={false} autoCapitalize="none" placeholder="up_o1_..." value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} /></label><Button type="button" variant="secondary" onClick={() => setReveal(!reveal)}>{reveal ? 'Hide' : 'Reveal'}</Button><Button type="submit" disabled={!tokenInput}>Continue</Button></form></section></main>;
+  if (!token) return <main className="page-container"><section className="viewer-card manage-card"><h1>Management token</h1>{message && <p role="alert">{message}</p>}<form onSubmit={(event) => { event.preventDefault(); if (id && tokenInput) { remember(id, tokenInput); setTokenInput(''); } }}><label>Management token<input aria-label="Management token" type={reveal ? 'text' : 'password'} autoComplete="off" spellCheck={false} autoCapitalize="none" placeholder="up_o1_..." value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} /></label><Button type="button" variant="secondary" onClick={() => setReveal(!reveal)}>{reveal ? 'Hide' : 'Reveal'}</Button><Button type="submit" disabled={!tokenInput}>Continue</Button></form></section></main>;
 
   const textEditable = share.payload_kind === 'TEXT' && (share.privacy_mode === 'STANDARD' || decryptAvailable);
   return <main className="page-container"><section className="viewer-card manage-card"><h1>Manage share</h1>{message && <p role="status">{message}</p>}

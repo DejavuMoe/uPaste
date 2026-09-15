@@ -6,6 +6,7 @@
    Semantic Design Tokens
    -------------------------------------------------------------------------- */
 :root, [data-theme="light"] {
+  color-scheme: light;
   /* Surfaces */
   --color-canvas: #f8fafc;
   --color-surface: #ffffff;
@@ -49,6 +50,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   /* Surfaces */
   --color-canvas: #0b0f17;
   --color-surface: #131b26;
@@ -70,11 +72,11 @@
   --color-accent-default: #3b82f6;
   --color-accent-hover: #60a5fa;
   --color-accent-subtle: #172554;
-  --color-accent-text: #ffffff;
+  --color-accent-text: #0b0f17;
 
   /* Feedback */
-  --color-danger-default: #ef4444;
-  --color-danger-hover: #f87171;
+  --color-danger-default: #dc2626;
+  --color-danger-hover: #b91c1c;
   --color-danger-subtle: #450a0a;
   --color-danger-text: #fca5a5;
 
@@ -516,7 +518,11 @@ body {
   font-size: var(--text-base);
   line-height: 1.6;
   resize: vertical;
-  outline: none;
+}
+
+.editor-textarea:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }
 
 .editor-footer {
@@ -1227,10 +1233,36 @@ body {
    Reduced Motion
    -------------------------------------------------------------------------- */
 .dialog-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: var(--space-4); background: rgb(15 23 42 / 45%); }
-.dialog { width: min(100%, 32rem); padding: var(--space-6); border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-surface-elevated); box-shadow: 0 4px 12px rgb(0 0 0 / 15%); }
+.dialog { width: min(100%, 32rem); max-height: calc(100dvh - 2 * var(--space-4)); overflow-y: auto; padding: var(--space-6); border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-surface-elevated); box-shadow: 0 4px 12px rgb(0 0 0 / 15%); }
 .dialog > .btn { margin: var(--space-2) var(--space-2) 0 0; }
 .manage-card label { display: grid; gap: var(--space-2); margin: var(--space-4) 0; }
-.manage-card textarea { min-height: 20rem; width: 100%; }
+.manage-card { padding: var(--space-6); color: var(--color-text-primary); }
+.manage-card h1, .dialog h2 { font-size: var(--text-xl); margin: 0 0 var(--space-4); }
+.manage-card label { font-size: var(--text-sm); }
+.manage-card input, .manage-card select, .manage-card textarea {
+  min-width: 0; max-width: 100%; width: 100%; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-default); border-radius: var(--radius-md);
+  background: var(--color-surface); color: var(--color-text-primary); font: inherit;
+}
+.manage-card textarea { min-height: 20rem; resize: vertical; line-height: 1.6; }
+.manage-card textarea.font-mono { font-family: var(--font-mono); }
+.manage-card dd { margin: 0 0 var(--space-3); overflow-wrap: anywhere; }
+.manage-card dt, .manage-card small { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.manage-card .viewer-actions { margin-top: var(--space-4); flex-wrap: wrap; }
+.manage-card .viewer-actions > .btn-danger { background: transparent; color: var(--color-danger-text); border-color: var(--color-border-default); }
+.manage-card .viewer-actions > .btn-danger:hover { background: var(--color-danger-subtle); }
+.editor-footer { gap: var(--space-3); flex-wrap: wrap; }
+.byte-counter { overflow-wrap: anywhere; }
+.input-with-actions > input, .file-info, .filename-text { min-width: 0; }
+.file-selected-row > .btn, .file-size, .input-with-actions > .btn { flex-shrink: 0; }
+.manage-card form > .btn { margin-right: var(--space-2); }
+@media (pointer: coarse) {
+  .btn, .segmented-button, .theme-select { min-height: 40px; }
+}
+@media (max-width: 480px) {
+  .manage-card { padding: var(--space-4); }
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
