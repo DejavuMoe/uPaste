@@ -43,17 +43,19 @@ grep ' upaste-v0.1.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum --check -
 tar -xzf upaste-v0.1.0-linux-amd64.tar.gz
 cd upaste-v0.1.0-linux-amd64
 ./upaste --version
+cat BUILDINFO
 ```
 
 `./upaste --version` must not contact the network, create a data directory, or
-start listeners. Install the binary atomically:
+start listeners. `BUILDINFO` mirrors the embedded version, commit, build date,
+Go version, and target for operator verification. Install the binary atomically:
 
 ```sh
 sudo install -o root -g root -m 0755 ./upaste /usr/local/bin/.upaste.new
 sudo mv -f /usr/local/bin/.upaste.new /usr/local/bin/upaste
 ```
 
-The release archive also contains `DEPLOYMENT.md`, `upaste.service`,
+The release archive also contains `DEPLOYMENT.md`, `BUILDINFO`, `upaste.service`,
 `upaste.env.example`, `nginx.conf.example`, and `Caddyfile.example`.
 
 ## 3. Configure the service
@@ -146,6 +148,17 @@ journalctl -u upaste -f
 
 Logs never intentionally contain request bodies, `Authorization` values, owner
 tokens, encryption keys, or encrypted-share plaintext.
+
+## Shutdown behavior and recovery
+
+systemd sends `SIGTERM`. uPaste stops accepting new connections and allows the
+HTTP servers up to 10 seconds for active handlers to finish. Ordinary API
+requests complete quickly. An in-flight 64 MiB File transfer may be abandoned;
+an interrupted upload never commits a Share, and any staging object is either
+removed immediately or becomes eligible for the existing 30-minute orphan
+reconciliation. Committed Shares remain intact, and restart reopens the same
+SQLite database and object store. `make qualify-release` includes a shutdown
+under active upload followed by restart and read verification.
 
 ## 7. Backup
 

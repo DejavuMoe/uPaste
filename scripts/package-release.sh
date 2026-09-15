@@ -75,6 +75,15 @@ stage_arch() {
   install -m 0644 deploy/upaste.env.example "$dir/upaste.env.example"
   install -m 0644 deploy/nginx/upaste.conf.example "$dir/nginx.conf.example"
   install -m 0644 deploy/caddy/Caddyfile.example "$dir/Caddyfile.example"
+
+  cat > "$dir/BUILDINFO" <<BUILDINFO_EOF
+version=$version
+commit=$commit
+buildDate=$build_date
+go=$(go env GOVERSION)
+target=linux/$goarch
+BUILDINFO_EOF
+  chmod 0644 "$dir/BUILDINFO"
 }
 
 build_arch amd64

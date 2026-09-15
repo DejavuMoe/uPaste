@@ -108,10 +108,8 @@ jobs:
           UPASTE_BINARY: ${{ github.workspace }}/upaste
         run: pnpm --dir web e2e:production
 
-  release:
+  qualify:
     runs-on: ubuntu-latest
-    env:
-      CGO_ENABLED: 0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -128,9 +126,5 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm --dir web install --frozen-lockfile
-      - name: Validate native deployment and reverse-proxy examples
-        run: ./scripts/check-deployment.sh
-      - name: Build deterministic synthetic release packages
-        run: ./scripts/package-release.sh v0.0.0-test "$RUNNER_TEMP/upaste-release"
-      - name: Verify packages, runtime, and deterministic rebuild
-        run: ./scripts/verify-release.sh v0.0.0-test "$RUNNER_TEMP/upaste-release"
+      - name: Run complete pre-release qualification gate
+        run: ./scripts/qualify-release.sh v0.0.0-test "$RUNNER_TEMP/upaste-release"

@@ -62,9 +62,19 @@ amd64_dir="$work/amd64/$amd64_top"
 [[ -x "$arm64_dir/upaste" ]] || fail "arm64 archive is missing an executable upaste"
 [[ -x "$amd64_dir/upaste" ]] || fail "amd64 archive is missing an executable upaste"
 
-for expected in README.md DEPLOYMENT.md upaste.service upaste.env.example nginx.conf.example Caddyfile.example; do
+for expected in README.md DEPLOYMENT.md BUILDINFO upaste.service upaste.env.example nginx.conf.example Caddyfile.example; do
   [[ -f "$arm64_dir/$expected" ]] || fail "arm64 archive is missing $expected"
   [[ -f "$amd64_dir/$expected" ]] || fail "amd64 archive is missing $expected"
+done
+
+for pair in "amd64:$amd64_dir" "arm64:$arm64_dir"; do
+  arch="${pair%%:*}"
+  dir="${pair#*:}"
+  grep -Fxq "version=$version" "$dir/BUILDINFO" || fail "$arch BUILDINFO version does not match $version"
+  grep -Fxq "commit=$commit" "$dir/BUILDINFO" || fail "$arch BUILDINFO commit does not match $commit"
+  grep -Fxq "target=linux/$arch" "$dir/BUILDINFO" || fail "$arch BUILDINFO target does not match linux/$arch"
+  grep -Eq '^buildDate=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$dir/BUILDINFO" || fail "$arch BUILDINFO buildDate is not deterministic UTC RFC3339"
+  grep -Eq '^go=go[0-9]' "$dir/BUILDINFO" || fail "$arch BUILDINFO Go version is missing"
 done
 
 arch_checked=0

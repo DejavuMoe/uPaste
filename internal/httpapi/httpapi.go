@@ -514,7 +514,7 @@ func isJSONMediaType(value string) bool {
 
 func sanitizeFilename(value string) (string, error) {
 	value = path.Base(strings.ReplaceAll(value, "\\", "/"))
-	if value == "" || value == "." || len(value) > 255 || !utf8.ValidString(value) {
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `\/`) || len(value) > 255 || !utf8.ValidString(value) {
 		return "", errors.New("invalid filename")
 	}
 	for _, character := range value {

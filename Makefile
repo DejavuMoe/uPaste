@@ -1,4 +1,4 @@
-.PHONY: format check test build e2e prod-e2e prove-embedded dist verify-dist deploy-check dev-backend dev-frontend install clean
+.PHONY: format check test build e2e prod-e2e prove-embedded dist verify-dist deploy-check qualify-release fuzz benchmark load-smoke dev-backend dev-frontend install clean
 
 format:
 	mise exec -- ./scripts/gofmt write
@@ -41,6 +41,25 @@ verify-dist:
 # Validate systemd unit and two-origin reverse-proxy examples.
 deploy-check:
 	mise exec -- ./scripts/check-deployment.sh
+
+# Complete deterministic pre-release gate: Go+race suites, deployment checks,
+# deterministic packages, packaged runtime, backup/restore, and shutdown-load.
+# Usage: make qualify-release VERSION=v0.0.0-test
+qualify-release:
+	@test -n "$(VERSION)" || (echo "usage: make qualify-release VERSION=v0.0.0-test" >&2; exit 2)
+	mise exec -- ./scripts/qualify-release.sh "$(VERSION)"
+
+# Bounded local/pre-release fuzz campaign (not every CI run).
+fuzz:
+	mise exec -- ./scripts/fuzz.sh
+
+# Repeatable local performance baseline (informational, not CI-gated).
+benchmark:
+	mise exec -- ./scripts/benchmark-local.sh
+
+# Bounded concurrent-read/create/upload/download load smoke (local/pre-release).
+load-smoke:
+	mise exec -- ./scripts/load-smoke.sh
 
 install:
 	mise exec -- pnpm --dir web install --frozen-lockfile

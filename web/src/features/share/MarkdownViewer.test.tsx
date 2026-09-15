@@ -148,6 +148,34 @@ World
     expect(screen.getByText('World')).toBeInTheDocument();
   });
 
+
+  it('neutralizes encoded protocol tricks, nested links, and no automatic media', () => {
+    const longUrl = `https://example.com/${'a'.repeat(5000)}`;
+    const md = [
+      '[encoded js](java%73cript:alert(1))',
+      '[encoded data](data%3Atext/html,<script>alert(1)</script>)',
+      '[nested [link]](javascript:alert(1))',
+      '![remote image](https://example.com/pixel.png)',
+      '<a href="javascript:alert(1)">raw anchor</a>',
+      `[long safe](${longUrl})`,
+    ].join('\n\n');
+
+    const { container } = render(
+      <MarkdownViewer shareId="md-share-8" content={md} isEncrypted={false} expiresAt={null} />,
+    );
+
+    expect(container.querySelector('script, iframe, object, embed, img, svg, style')).toBeNull();
+    for (const anchor of Array.from(container.querySelectorAll('.markdown-body a'))) {
+      expect(anchor.getAttribute('href') ?? '').toMatch(/^(https?:|mailto:)/);
+      expect(anchor.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+    }
+    expect(screen.queryByRole('link', { name: 'encoded js' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'encoded data' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'nested link' })).toBeNull();
+    expect(screen.getByRole('link', { name: '[Image: remote image]' })).toHaveAttribute('href', 'https://example.com/pixel.png');
+    expect(screen.getByRole('link', { name: 'long safe' })).toHaveAttribute('href', longUrl);
+  });
+
   it('renders GFM task list checkboxes as disabled and read-only', () => {
     const md = `
 - [ ] Incomplete task

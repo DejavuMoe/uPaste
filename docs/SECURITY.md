@@ -71,6 +71,22 @@ The supported systemd unit runs as an unprivileged `upaste` user, loads `/etc/up
 
 Backups must capture the complete data tree (`upaste.db`, any SQLite side files, and `objects/`) in a cold, consistent state. Database migrations are forward-only, so binary-only rollback is safe only when no schema advancement has occurred; otherwise restore the pre-upgrade backup. No license has been selected or implied by the release tooling.
 
+## Pre-release qualification gate
+
+Before any real version tag, `make qualify-release VERSION=v0.0.0-test` must pass. It runs the full Go suite under the race detector, repeated stress on `share`, `database`, `maintenance`, `abuse`, `httpapi`, `fileapi`, and `objectstore`, deployment and systemd checks, deterministic amd64/arm64 package builds, packaged runtime verification, an automated cold backup/restore proof, and a shutdown-under-load restart proof. Ordinary CI runs the same qualification with a synthetic non-release version and never publishes.
+
+Additional explicit local/pre-release checks:
+
+```sh
+make fuzz        # bounded parser fuzz campaigns (capability, XFF, base64url, filename, CIDR)
+make benchmark   # informational local performance baseline, not a CI threshold
+make load-smoke  # bounded concurrent load exercising rate limits, gates, and recovery
+```
+
+The security suite also locks capability/Share-ID/path attack matrices, JSON and multipart adversarial behavior, interrupted-upload cleanup, raw/File-origin attachment semantics, browser encrypted-text tamper rejection, Markdown sanitization, trusted-proxy spoofing resistance, rate-limit and concurrency-gate release paths, SQLite integrity, migration compatibility, and object-store confinement.
+
+Release archives include a deterministic `BUILDINFO` file (version, commit, build date, Go version, target) in addition to embedded `upaste --version` metadata and `SHA256SUMS`. No license has been selected or implied. No real version tag or GitHub Release is created by the qualification gate.
+
 ## Repository secret policy
 
 This public repository must never contain real credentials, tokens, private keys, databases, uploaded content, `.env` files, secrets, or private IDE state. Examples, if introduced, use conspicuously fake values. Before every commit, inspect staged changes and scan for accidental secrets. Runtime secrets come from deployment configuration outside Git; they must not be printed.

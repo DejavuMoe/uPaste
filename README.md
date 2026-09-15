@@ -4,7 +4,7 @@ uPaste is a self-hosted application for sharing text and files. Security, reliab
 
 ## Current status
 
-Phase 9 is complete: uPaste is a versionable single binary with deterministic Linux release packaging, native systemd deployment, two-origin reverse-proxy examples, and operational upgrade/backup guidance. No version tag or GitHub Release has been created; release tooling is prepared only.
+Phase 10 is complete: uPaste has passed the pre-release security, race, fuzz, recovery, resource, and packaging qualification gate. The repository is ready for a deliberate first-release decision, but no version tag or GitHub Release has been created; release tooling and qualification are prepared only.
 
 Implemented:
 
@@ -16,6 +16,7 @@ Implemented:
 - Production React UI embedded in the Go binary with strict SPA routing, immutable asset caching, and a restrictive CSP.
 - Deterministic `linux/amd64` and `linux/arm64` release archives with SHA-256 checksums and embedded version/commit/build metadata.
 - Native systemd service, example environment file, and Nginx/Caddy two-origin reverse-proxy examples.
+- Pre-release qualification covering race and fuzz parsers, concurrency and recovery stress, trusted-proxy spoofing, package/runtime integrity, automated backup/restore, and shutdown-under-load behavior.
 
 Not implemented: Encrypted File Shares, public listing/search, accounts, malware scanning, hard storage quotas, distributed rate limiting, Docker/container packaging, and automatic updates. See [docs/PRODUCT.md](docs/PRODUCT.md) for the frozen V1 scope.
 
@@ -79,9 +80,33 @@ make dist VERSION=v0.1.0
 make verify-dist VERSION=v0.1.0
 ```
 
-`release/` receives `upaste-v0.1.0-linux-amd64.tar.gz`, `upaste-v0.1.0-linux-arm64.tar.gz`, and `SHA256SUMS`. Each archive contains `upaste`, `README.md`, `DEPLOYMENT.md`, `upaste.service`, `upaste.env.example`, `nginx.conf.example`, and `Caddyfile.example`. Archives use normalized ownership, permissions, ordering, timestamps, and gzip headers; `make verify-dist` checks checksums, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild.
+`release/` receives `upaste-v0.1.0-linux-amd64.tar.gz`, `upaste-v0.1.0-linux-arm64.tar.gz`, and `SHA256SUMS`. Each archive contains `upaste`, `README.md`, `DEPLOYMENT.md`, `BUILDINFO` (version/commit/build date/Go/target), `upaste.service`, `upaste.env.example`, `nginx.conf.example`, and `Caddyfile.example`. Archives use normalized ownership, permissions, ordering, timestamps, and gzip headers; `make verify-dist` checks checksums, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild.
 
-A draft-only GitHub release workflow exists at `.github/workflows/release.yml` for future `v*` tags. It was not triggered by this phase: no version tag and no GitHub Release were created.
+A draft-only GitHub release workflow exists at `.github/workflows/release.yml` for future `v*` tags. It validates with least privilege, runs the complete pre-release gate on the tagged source, makes no release on manual dispatch, and creates or refreshes a draft only when triggered by a real `v*` tag. It was not triggered by this phase: no version tag and no GitHub Release were created.
+
+Run the complete deterministic pre-release gate locally with:
+
+```sh
+make qualify-release VERSION=v0.0.0-test
+```
+
+Longer fuzz campaigns (`make fuzz`), machine-specific performance baselines (`make benchmark`), and bounded concurrent load smoke (`make load-smoke`) remain explicit local/pre-release commands rather than every-push CI.
+
+## First real release checklist (human action required)
+
+1. Select the release version and review the scope.
+2. Decide the license separately; no license has been selected.
+3. Ensure `master` CI is green for the candidate commit.
+4. Run `make qualify-release VERSION=<version>` locally or in CI.
+5. Review release notes/scope; no changelog generator is required.
+6. Decide the signed/annotated tag policy.
+7. Push the `v*` tag intentionally.
+8. Wait for the release workflow and inspect the draft release.
+9. Verify `SHA256SUMS`, `BUILDINFO`, and `upaste --version` on the draft artifact.
+10. Download and smoke-test the draft artifact.
+11. Publish the draft manually only after review.
+
+Phase 10 did not perform steps 1–11; they remain an explicit owner decision.
 
 ## Native deployment in brief
 

@@ -284,3 +284,51 @@ func authorizedJSON(env *apiTestEnv, method, path, token string, value map[strin
 	bearer(request, token)
 	return env.serve(request)
 }
+
+func TestOwnerAuthorizationAttackMatrix(t *testing.T) {
+	env := newAPITestEnv(t)
+	first := env.create("PLAIN", "first", nil)
+	second := env.create("PLAIN", "second", nil)
+	path := "/api/v1/shares/" + first.Share.ID
+	body := []byte(`{"expires_at":null}`)
+
+	other, err := capability.GenerateOwnerToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := first.OwnerToken
+	headers := map[string]string{
+		"missing":               "",
+		"scheme only":           "Bearer",
+		"empty bearer":          "Bearer ",
+		"wrong scheme":          "Basic " + valid,
+		"truncated token":       "Bearer " + valid[:len(valid)-1],
+		"extended token":        "Bearer " + valid + "A",
+		"wrong prefix":          "Bearer " + "up_o2_" + valid[len("up_o1_"):],
+		"invalid base64 char":   "Bearer " + valid[:len(valid)-1] + "!",
+		"padding character":     "Bearer " + valid[:len(valid)-2] + "==",
+		"share id as token":     "Bearer " + first.Share.ID,
+		"share id as capacity":  "Bearer " + second.OwnerToken,
+		"unrelated valid token": "Bearer " + other.Reveal(),
+	}
+	for name, header := range headers {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(string(body)))
+			request.Header.Set("Content-Type", "application/json")
+			if header != "" {
+				request.Header.Set("Authorization", header)
+			}
+			response := env.serve(request)
+			assertError(t, response, http.StatusUnauthorized, "unauthorized")
+			if strings.Contains(response.Body.String(), valid) || strings.Contains(env.logs.String(), valid) {
+				t.Fatal("authorization failure leaked a capability")
+			}
+		})
+	}
+
+	// The first Share remains active and unchanged after every rejected attempt.
+	response := env.request(http.MethodGet, path, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("Share became inaccessible after failed authorization: %d", response.Code)
+	}
+}

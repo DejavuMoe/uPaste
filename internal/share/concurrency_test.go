@@ -54,4 +54,23 @@ func TestConcurrentOwnerUpdatesAndIndependentCreates(t *testing.T) {
 			t.Errorf("concurrent write: %v", err)
 		}
 	}
+
+	var integrity string
+	if err := db.QueryRow("PRAGMA integrity_check").Scan(&integrity); err != nil {
+		t.Fatalf("integrity_check: %v", err)
+	}
+	if integrity != "ok" {
+		t.Fatalf("integrity_check = %q, want ok", integrity)
+	}
+	rows, err := db.Query("PRAGMA foreign_key_check")
+	if err != nil {
+		t.Fatalf("foreign_key_check: %v", err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		t.Fatal("foreign_key_check reported a violation")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("foreign_key_check rows: %v", err)
+	}
 }

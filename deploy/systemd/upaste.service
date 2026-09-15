@@ -17,7 +17,7 @@ TimeoutStopSec=30s
 KillSignal=SIGTERM
 UMask=0077
 
-# Runtime hardening. uPaste only needs loopback TCP listeners below port 1024
+# Runtime hardening. uPaste only needs loopback TCP listeners above port 1024
 # and a writable data directory, so capabilities and most kernel surfaces are
 # removed.
 NoNewPrivileges=true

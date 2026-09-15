@@ -27,6 +27,7 @@ type apiTestEnv struct {
 	handler http.Handler
 	now     *time.Time
 	logs    *bytes.Buffer
+	dataDir string
 }
 
 func newAPITestEnv(t *testing.T) *apiTestEnv {
@@ -44,7 +45,7 @@ func newAPITestEnv(t *testing.T) *apiTestEnv {
 	logs := new(bytes.Buffer)
 	log := slog.New(slog.NewTextHandler(logs, nil))
 	service := share.NewWithStore(db, store, func() time.Time { return now })
-	env := &apiTestEnv{t: t, db: db, store: store, shares: service, log: log, handler: New(service, "https://files.example.test", log), now: &now, logs: logs}
+	env := &apiTestEnv{t: t, db: db, store: store, shares: service, log: log, handler: New(service, "https://files.example.test", log), now: &now, logs: logs, dataDir: dataDir}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Error(err)

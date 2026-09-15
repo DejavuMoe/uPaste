@@ -79,3 +79,37 @@ func TestControlLimitsAndBounds(t *testing.T) {
 		t.Fatal("idle eviction did not admit")
 	}
 }
+
+func TestClientIPSpoofingMatrix(t *testing.T) {
+	trusted := []netip.Prefix{
+		netip.MustParsePrefix("127.0.0.1/32"),
+		netip.MustParsePrefix("::1/128"),
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("2001:db8::/32"),
+	}
+	tests := []struct {
+		name string
+		peer string
+		xff  string
+		want string
+	}{
+		{"untrusted peer ignores forged xff", "198.51.100.2:1", "127.0.0.1", "198.51.100.2"},
+		{"trusted loopback proxy uses rightmost untrusted", "127.0.0.1:1", "203.0.113.9", "203.0.113.9"},
+		{"client supplied left entries are not chosen", "127.0.0.1:1", "198.51.100.7, 203.0.113.9", "203.0.113.9"},
+		{"multiple trusted hops stop at first untrusted", "127.0.0.1:1", "203.0.113.9, 10.0.0.5, 127.0.0.1", "203.0.113.9"},
+		{"all trusted chain falls back to peer", "127.0.0.1:1", "10.0.0.5, 127.0.0.1", "127.0.0.1"},
+		{"malformed member fails closed to peer", "127.0.0.1:1", "203.0.113.9, bad", "127.0.0.1"},
+		{"ipv4 mapped peer is unmapped before trust", "[::ffff:198.51.100.2]:1", "127.0.0.1", "198.51.100.2"},
+		{"ipv6 trusted peer with all trusted chain falls back to peer", "[2001:db8::10]:1", "2001:db8::20", "2001:db8::10"},
+		{"ipv6 untrusted peer ignores forged chain", "[2001:db8:ffff::10]:1", "10.0.0.1, 127.0.0.1", "2001:db8:ffff::10"},
+		{"empty xff falls back to peer", "127.0.0.1:1", "", "127.0.0.1"},
+		{"untrusted peer with all trusted chain", "198.51.100.2:1", "10.0.0.1, 127.0.0.1", "198.51.100.2"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ClientIP(test.peer, test.xff, trusted).String(); got != test.want {
+				t.Fatalf("ClientIP(%q, %q) = %q, want %q", test.peer, test.xff, got, test.want)
+			}
+		})
+	}
+}

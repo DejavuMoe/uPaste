@@ -25,11 +25,15 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 | `make dist VERSION=v0.1.0` | Build deterministic `linux/amd64` and `linux/arm64` release archives plus `SHA256SUMS` under `release/`. |
 | `make verify-dist VERSION=v0.1.0` | Verify checksums, archive shape, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild. |
 | `make deploy-check` | Validate the systemd unit and two-origin reverse-proxy examples, including `systemd-analyze verify` when available. |
+| `make qualify-release VERSION=v0.0.0-test` | Complete pre-release gate: Go and race suites, repeated concurrency stress, deployment checks, deterministic amd64/arm64 packaging, packaged runtime verification, automated cold backup/restore proof, and shutdown-under-load proof. |
+| `make fuzz` | Bounded local/pre-release Go fuzz campaign for the parser boundaries. Not part of every CI run. |
+| `make benchmark` | Repeatable local performance baseline for release awareness. Informational only; not CI-gated. |
+| `make load-smoke` | Bounded concurrent read/create/upload/download load smoke that exercises backpressure and recovery. Local/pre-release, not every-push CI. |
 | `make dev-backend` | Run the API and File listeners without the embedded frontend. |
 | `make dev-frontend` | Run Vite's development server for the UI. |
 | `make clean` | Remove generated binaries, frontend output, embedding staging, and release archives. |
 
-Before committing run `make format`, `make check`, `make test`, and `make build`, then inspect the diff, staged files, and status for secrets or artifacts.
+Before committing run `make format`, `make check`, `make test`, and `make build`, then inspect the diff, staged files, and status for secrets or artifacts. Before a real release run `make qualify-release VERSION=...`; longer fuzz campaigns and machine-specific performance measurement remain explicit local/pre-release commands.
 
 ## Development and production frontend
 
@@ -95,6 +99,7 @@ upaste-<version>-linux-<arch>/
   upaste
   README.md
   DEPLOYMENT.md
+  BUILDINFO
   upaste.service
   upaste.env.example
   nginx.conf.example
@@ -172,4 +177,4 @@ curl -i http://127.0.0.1:8080/
 
 ## CI
 
-CI has five jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs `go vet -tags production ./...` and `go test -tags production ./...`, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded-production browser suite (including the slow-upload CSP/progress qualification). `release` validates deployment examples and the systemd unit, then runs `scripts/package-release.sh` and `scripts/verify-release.sh` with the synthetic `v0.0.0-test` version so packaging, checksums, arm64 packaging, amd64 runtime, restart persistence, and deterministic rebuilds are exercised without publishing anything. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
+CI has five jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs `go vet -tags production ./...` and `go test -tags production ./...`, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded-production browser suite (including the slow-upload and encrypted-adversarial qualification). `qualify` runs `scripts/qualify-release.sh` with the synthetic `v0.0.0-test` version: full Go suite, race suite, repeated concurrency stress, deployment/systemd checks, deterministic amd64/arm64 package build and verification, backup/restore proof, and shutdown-under-load proof. It never publishes a release. Longer fuzz campaigns (`make fuzz`) and performance baselines (`make benchmark`) are intentionally manual/pre-release rather than every-push CI. Action references are immutable SHAs annotated with their upstream major tag in the workflow.

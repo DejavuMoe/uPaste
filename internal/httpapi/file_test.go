@@ -197,6 +197,18 @@ func TestFileMultipartValidation(t *testing.T) {
 			p, _ = w.CreateFormFile("file", "x")
 			_, _ = p.Write([]byte("x"))
 		}},
+		{"metadata with filename", func(w *multipart.Writer) {
+			p, _ := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {`form-data; name="metadata"; filename="x"`}, "Content-Type": {"application/json"}})
+			_, _ = p.Write([]byte(valid))
+			p, _ = w.CreateFormFile("file", "x")
+			_, _ = p.Write([]byte("x"))
+		}},
+		{"invalid metadata JSON", func(w *multipart.Writer) {
+			p, _ := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {`form-data; name="metadata"`}, "Content-Type": {"application/json"}})
+			_, _ = p.Write([]byte(`{"payload_kind":`))
+			p, _ = w.CreateFormFile("file", "x")
+			_, _ = p.Write([]byte("x"))
+		}},
 		{"zero file", func(w *multipart.Writer) {
 			p, _ := w.CreatePart(textproto.MIMEHeader{"Content-Disposition": {`form-data; name="metadata"`}, "Content-Type": {"application/json"}})
 			_, _ = p.Write([]byte(valid))
@@ -252,7 +264,7 @@ func TestFilenamePolicy(t *testing.T) {
 			t.Fatalf("sanitize %q = %q/%v", filename, got, err)
 		}
 	}
-	for _, filename := range []string{"", "\x00x", "line\nbreak", "line\rbreak", strings.Repeat("x", 256)} {
+	for _, filename := range []string{"", "\x00x", "line\nbreak", "line\rbreak", strings.Repeat("x", 256), "/", "//", "\\", "\\\\", "..", "../", "a/.."} {
 		if _, err := sanitizeFilename(filename); err == nil {
 			t.Fatalf("unsafe filename %q accepted", filename)
 		}
