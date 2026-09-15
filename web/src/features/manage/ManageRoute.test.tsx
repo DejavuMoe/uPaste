@@ -1,22 +1,28 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { ThemeProvider } from '../../app/theme';
 import { OwnerCapabilityProvider, useOwnerCapabilities } from '../../app/ownerCapabilities';
 import { ManageRoute } from './ManageRoute';
 import * as api from '../../app/api';
+import * as crypto from '../../crypto/encryptedText';
 
-const encrypted = { id: 'share', payload_kind: 'TEXT' as const, privacy_mode: 'ENCRYPTED' as const, created_at: '', updated_at: '', expires_at: null, encrypted_text: { protocol: 'UPASTE_AES_GCM_V1', nonce: 'x', ciphertext: 'x' } };
-function Page({ token }: { token?: string }) { const caps = useOwnerCapabilities(); if (token) caps.remember('share', token); return <RouterProvider router={createMemoryRouter([{ path: '/manage/:id', element: <ManageRoute /> }], { initialEntries: ['/manage/share'] })} />; }
-function renderManage(token = 'up_o1_test') { return render(<ThemeProvider><OwnerCapabilityProvider><Page token={token} /></OwnerCapabilityProvider></ThemeProvider>); }
+const standard = (expires_at: string | null = null) => ({ id: 'share', payload_kind: 'TEXT' as const, privacy_mode: 'STANDARD' as const, created_at: '', updated_at: '', expires_at, text: { format: 'PLAIN' as const, content: 'original' } });
+const encrypted = () => ({ id: 'share', payload_kind: 'TEXT' as const, privacy_mode: 'ENCRYPTED' as const, created_at: '', updated_at: '', expires_at: null, encrypted_text: { protocol: 'UPASTE_AES_GCM_V1', nonce: 'x', ciphertext: 'x' } });
+function Gate() { const caps = useOwnerCapabilities(); caps.remember('share', 'up_o1_test'); return null; }
+function mount(path = '/manage/share') { return render(<ThemeProvider><OwnerCapabilityProvider><Gate /><RouterProvider router={createMemoryRouter([{ path: '/manage/:id', element: <ManageRoute /> }], { initialEntries: [path] })} /></OwnerCapabilityProvider></ThemeProvider>); }
+const ready = async () => waitFor(() => expect(screen.queryByText('Loading share…')).toBeNull());
+beforeEach(() => { vi.restoreAllMocks(); vi.spyOn(api, 'updateShare').mockResolvedValue({ share: standard() }); vi.spyOn(api, 'deleteShare').mockResolvedValue(); });
 
-describe('ManageRoute focused regressions', () => {
-  it('reaches ready no-key encrypted management', async () => {
-    vi.spyOn(api, 'getShare').mockResolvedValue({ share: encrypted });
-    renderManage();
-    await waitFor(() => expect(screen.getByText(/Content editing is unavailable/)).toBeInTheDocument());
-    expect(screen.queryByLabelText('Editor')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Delete share' })).toBeInTheDocument();
-  });
+describe('ManageRoute state regressions', () => {
+  it('reaches ready no-key encrypted management', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: encrypted() }); mount(); await ready(); expect(screen.getByText(/Content editing is unavailable/)).toBeInTheDocument(); expect(screen.queryByLabelText('Editor')).toBeNull(); });
+  it('keeps management ready for malformed encrypted key', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: encrypted() }); vi.spyOn(crypto, 'decryptWithFragment').mockRejectedValue(new Error()); mount('/manage/share#bad'); await ready(); expect(screen.getByText(/Unable to decrypt this share/)).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Delete share' })).toBeInTheDocument(); });
+  it('keeps invalid custom expiration selected and blocks mutation', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: standard() }); mount(); await ready(); fireEvent.change(screen.getByLabelText('Expiration'), { target: { value: 'custom' } }); expect(screen.getByText('Select an expiration date and time.')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled(); expect(api.updateShare).not.toHaveBeenCalled(); fireEvent.change(screen.getByLabelText('Custom expiration date and time'), { target: { value: '2000-01-01T00:00' } }); expect(screen.getByText('Expiration date must be in the future.')).toBeInTheDocument(); });
+  it('omits untouched exact expiration on content update', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: standard('2035-01-01T12:00:00Z') }); mount(); await ready(); fireEvent.change(screen.getByLabelText('Editor'), { target: { value: 'changed' } }); fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); await waitFor(() => expect(api.updateShare).toHaveBeenCalled()); expect((api.updateShare as any).mock.calls[0][2]).not.toHaveProperty('expires_at'); });
+  it('resolves relative expiration on save', async () => { vi.useFakeTimers(); vi.setSystemTime(new Date('2030-01-01T00:00:00Z')); vi.spyOn(api, 'getShare').mockResolvedValue({ share: standard() }); mount(); await vi.runAllTimersAsync(); fireEvent.change(screen.getByLabelText('Expiration'), { target: { value: '1h' } }); vi.setSystemTime(new Date('2030-01-01T00:20:00Z')); fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); await vi.runAllTimersAsync(); expect((api.updateShare as any).mock.calls[0][2].expires_at).toBe('2030-01-01T01:20:00.000Z'); vi.useRealTimers(); });
+  it('does not reencrypt encrypted expiration-only update', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: encrypted() }); vi.spyOn(crypto, 'decryptWithFragment').mockResolvedValue({ format: 'PLAIN', content: 'clear' }); const encrypt = vi.spyOn(crypto, 'encryptWithFragment'); mount('/manage/share#up_e1_test'); await ready(); fireEvent.change(screen.getByLabelText('Expiration'), { target: { value: '1h' } }); fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); await waitFor(() => expect(api.updateShare).toHaveBeenCalled()); expect(encrypt).not.toHaveBeenCalled(); expect((api.updateShare as any).mock.calls[0][2]).not.toHaveProperty('encrypted_text'); });
+  it('does not PATCH after local encryption failure', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: encrypted() }); vi.spyOn(crypto, 'decryptWithFragment').mockResolvedValue({ format: 'PLAIN', content: 'clear' }); vi.spyOn(crypto, 'encryptWithFragment').mockRejectedValue(new Error()); mount('/manage/share#up_e1_test'); await ready(); fireEvent.change(screen.getByLabelText('Editor'), { target: { value: 'draft' } }); fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); await waitFor(() => expect(screen.getByText('Could not save changes.')).toBeInTheDocument()); expect(api.updateShare).not.toHaveBeenCalled(); expect(screen.getByLabelText('Editor')).toHaveValue('draft'); });
+  it('sends explicit never only', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: standard('2035-01-01T12:00:00Z') }); mount(); await ready(); fireEvent.change(screen.getByLabelText('Expiration'), { target: { value: 'never' } }); fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); await waitFor(() => expect(api.updateShare).toHaveBeenCalled()); expect((api.updateShare as any).mock.calls[0][2]).toEqual({ expires_at: null }); });
+  it('deletes encrypted dirty markdown without refetch', async () => { vi.spyOn(api, 'getShare').mockResolvedValue({ share: encrypted() }); vi.spyOn(crypto, 'decryptWithFragment').mockResolvedValue({ format: 'MARKDOWN', content: 'clear' }); const get = api.getShare as any; mount('/manage/share#up_e1_test'); await ready(); fireEvent.change(screen.getByLabelText('Editor'), { target: { value: 'draft' } }); fireEvent.click(screen.getByRole('button', { name: 'Delete share' })); fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' })); await waitFor(() => expect(screen.getByText('Share deleted')).toBeInTheDocument()); expect(get).toHaveBeenCalledTimes(1); expect(screen.queryByText('You have unsaved changes.')).toBeNull(); });
 });
