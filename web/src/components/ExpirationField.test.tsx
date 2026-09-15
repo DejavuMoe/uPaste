@@ -85,3 +85,27 @@ describe('ExpirationField', () => {
     });
   });
 });
+
+  describe('public retention policy', () => {
+    const policy = { mode: 'public' as const, defaultSeconds: 86400, maxSeconds: 604800 };
+
+    it('hides Never and 30 days and defaults to one day', () => {
+      render(<ExpirationField policy={policy} />);
+      const select = screen.getByLabelText('Expiration') as HTMLSelectElement;
+      expect(select.value).toBe('1d');
+      expect(screen.queryByRole('option', { name: 'Never' })).toBeNull();
+      expect(screen.queryByRole('option', { name: '30 days' })).toBeNull();
+      expect(screen.getByRole('option', { name: '1 hour' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: '7 days' })).toBeInTheDocument();
+    });
+
+    it('rejects a custom expiration beyond the retained horizon', () => {
+      render(<ExpirationField policy={policy} />);
+      fireEvent.change(screen.getByLabelText('Expiration'), { target: { value: 'custom' } });
+      const custom = screen.getByLabelText('Custom expiration date and time') as HTMLInputElement;
+      const tooFar = new Date(Date.now() + 8 * 86400000);
+      const local = new Date(tooFar.getTime() - tooFar.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      fireEvent.change(custom, { target: { value: local } });
+      expect(screen.getByRole('alert')).toHaveTextContent(/within 168 hours/i);
+    });
+  });

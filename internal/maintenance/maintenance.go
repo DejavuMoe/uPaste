@@ -29,6 +29,16 @@ type Service struct {
 
 func New(db *sql.DB, store objectstore.Store) *Service { return &Service{db: db, store: store} }
 
+// CleanupExpired reuses the established purge/reconciliation pass for the
+// admin cleanup action and returns only the number of purged Shares.
+func (service *Service) CleanupExpired(ctx context.Context, now time.Time) (int, error) {
+	result, err := service.RunOnce(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	return result.Purged, nil
+}
+
 func (service *Service) RunOnce(ctx context.Context, now time.Time) (result Result, err error) {
 	for range MaxPerRun / BatchSize {
 		keys, count, batchErr := service.purgeBatch(ctx, now)

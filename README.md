@@ -4,7 +4,7 @@ uPaste is a self-hosted application for sharing text and files. Security, reliab
 
 ## Current status
 
-Phase 10 is complete: uPaste has passed the pre-release security, race, fuzz, recovery, resource, and packaging qualification gate. The repository is ready for a deliberate first-release decision, but no version tag or GitHub Release has been created; release tooling and qualification are prepared only.
+Phase 11 is complete: uPaste supports a private backward-compatible mode and an Internet-facing public mode with challenge-gated anonymous creation, bounded retention, and a single Superadmin governance surface. No ordinary user accounts were introduced, and no version tag or GitHub Release has been created.
 
 Implemented:
 
@@ -17,6 +17,8 @@ Implemented:
 - Deterministic `linux/amd64` and `linux/arm64` release archives with SHA-256 checksums and embedded version/commit/build metadata.
 - Native systemd service, example environment file, and Nginx/Caddy two-origin reverse-proxy examples.
 - Pre-release qualification covering race and fuzz parsers, concurrency and recovery stress, trusted-proxy spoofing, package/runtime integrity, automated backup/restore, and shutdown-under-load behavior.
+- Public deployment mode with Cap (recommended self-hosted) or Cloudflare Turnstile challenge verification, 1-day default / 7-day maximum retention, and creation-anchored expiration enforcement.
+- One high-entropy Superadmin capability with in-memory HttpOnly sessions, CSRF protection, bounded Share enumeration/inspection, deletion, bulk deletion, and expired cleanup. Superadmin cannot edit content, recover OwnerTokens, or decrypt encrypted Shares.
 
 Not implemented: Encrypted File Shares, public listing/search, accounts, malware scanning, hard storage quotas, distributed rate limiting, Docker/container packaging, and automatic updates. See [docs/PRODUCT.md](docs/PRODUCT.md) for the frozen V1 scope.
 
@@ -45,6 +47,13 @@ The backend creates `./data/upaste.db` and `./data/objects/` by default. Configu
 | File listener address | `UPASTE_FILE_ADDR` | `-file-addr` | `127.0.0.1:8081` |
 | Public file origin | `UPASTE_FILE_ORIGIN` | `-file-origin` | `http://127.0.0.1:8081` |
 | Trusted proxy CIDRs | `UPASTE_TRUSTED_PROXY_CIDRS` | `-trusted-proxy-cidrs` | empty |
+| Deployment mode | `UPASTE_DEPLOYMENT_MODE` | — | `private` |
+| Public default TTL | `UPASTE_PUBLIC_DEFAULT_TTL` | — | `24h` |
+| Public maximum TTL | `UPASTE_PUBLIC_MAX_TTL` | — | `168h` |
+| Challenge provider | `UPASTE_CHALLENGE_PROVIDER` | — | empty (private) |
+| Cap endpoint / site / secret | `UPASTE_CAP_ENDPOINT`, `UPASTE_CAP_SITE_KEY`, `UPASTE_CAP_SECRET_KEY` | — | empty |
+| Turnstile site / secret / hostname | `UPASTE_TURNSTILE_SITE_KEY`, `UPASTE_TURNSTILE_SECRET_KEY`, `UPASTE_TURNSTILE_HOSTNAME` | — | empty |
+| Superadmin token | `UPASTE_ADMIN_TOKEN` | — | empty (admin disabled) |
 | Data directory | `UPASTE_DATA_DIR` | `-data-dir` | `./data` |
 
 The resolved data directory is normalized to an absolute clean path. Binding beyond loopback must be an explicit operator choice.
@@ -107,6 +116,22 @@ Longer fuzz campaigns (`make fuzz`), machine-specific performance baselines (`ma
 11. Publish the draft manually only after review.
 
 Phase 10 did not perform steps 1–11; they remain an explicit owner decision.
+
+## Public mode and Superadmin
+
+`UPASTE_DEPLOYMENT_MODE=public` is intended for Internet-facing anonymous use. Startup fails closed unless exactly one challenge provider and a high-entropy `UPASTE_ADMIN_TOKEN` (`up_a1_<256-bit unpadded base64url>`) are configured, and unless `0 < UPASTE_PUBLIC_DEFAULT_TTL <= UPASTE_PUBLIC_MAX_TTL`. Public Shares always expire; creation defaults to the configured TTL and requested or patched expiration cannot exceed `created_at + UPASTE_PUBLIC_MAX_TTL`.
+
+Cap is the recommended self-hosted provider:
+
+```text
+paste.example.com  -> uPaste application listener
+files.example.com  -> uPaste File listener
+cap.example.com    -> reverse proxy -> Cap Standalone
+```
+
+The challenge token is sent only in `X-uPaste-Challenge`, never in bodies, URLs, queries, cookies, or browser storage. Cap's standalone backend must not be directly Internet-reachable, and its reverse proxy must overwrite client-IP forwarding headers. Turnstile is supported as an alternative with `action=create_share` and hostname validation.
+
+`/admin` and `/api/v1/admin/*` are 404 unless `UPASTE_ADMIN_TOKEN` is configured. The admin page is a compact operations table for filtering, inspecting server-visible metadata/content, deleting, bulk-deleting, and cleaning expired content. Encrypted Shares remain server-side ciphertext: the admin UI shows metadata and ciphertext size only.
 
 ## Native deployment in brief
 

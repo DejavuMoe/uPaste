@@ -28,6 +28,7 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 | `make qualify-release VERSION=v0.0.0-test` | Complete pre-release gate: Go and race suites, repeated concurrency stress, deployment checks, deterministic amd64/arm64 packaging, packaged runtime verification, automated cold backup/restore proof, and shutdown-under-load proof. |
 | `make fuzz` | Bounded local/pre-release Go fuzz campaign for the parser boundaries. Not part of every CI run. |
 | `make benchmark` | Repeatable local performance baseline for release awareness. Informational only; not CI-gated. |
+| `make e2e` / `pnpm --dir web e2e:public` / `pnpm --dir web e2e:cap` | Private Vite E2E, public Turnstile-mode E2E, and real Cap-widget E2E against a local deterministic Cap mock. |
 | `make load-smoke` | Bounded concurrent read/create/upload/download load smoke that exercises backpressure and recovery. Local/pre-release, not every-push CI. |
 | `make dev-backend` | Run the API and File listeners without the embedded frontend. |
 | `make dev-frontend` | Run Vite's development server for the UI. |
@@ -129,6 +130,15 @@ Configuration precedence is CLI, then environment, then default:
 | File listener address | `UPASTE_FILE_ADDR` | `-file-addr` | `127.0.0.1:8081` |
 | Public file origin | `UPASTE_FILE_ORIGIN` | `-file-origin` | `http://127.0.0.1:8081` |
 | Trusted proxy CIDRs | `UPASTE_TRUSTED_PROXY_CIDRS` | `-trusted-proxy-cidrs` | empty |
+| Deployment mode | `UPASTE_DEPLOYMENT_MODE` | — | `private` |
+| Public default TTL | `UPASTE_PUBLIC_DEFAULT_TTL` | — | `24h` |
+| Public maximum TTL | `UPASTE_PUBLIC_MAX_TTL` | — | `168h` |
+| Challenge provider | `UPASTE_CHALLENGE_PROVIDER` | — | empty (private mode) |
+| Cap settings | `UPASTE_CAP_ENDPOINT`, `UPASTE_CAP_SITE_KEY`, `UPASTE_CAP_SECRET_KEY` | — | empty |
+| Turnstile settings | `UPASTE_TURNSTILE_SITE_KEY`, `UPASTE_TURNSTILE_SECRET_KEY`, `UPASTE_TURNSTILE_HOSTNAME` | — | empty |
+| Challenge timeout | `UPASTE_CHALLENGE_TIMEOUT` | — | `10s` |
+| Superadmin token | `UPASTE_ADMIN_TOKEN` | — | empty (admin disabled) |
+| Admin cookie Secure | `UPASTE_ADMIN_COOKIE_SECURE` | — | true in public mode |
 | Data directory | `UPASTE_DATA_DIR` | `-data-dir` | `./data` |
 
 The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db` and `<data-dir>/objects/`; newly created directories/database/object modes are `0700`/`0600`. File and application addresses must differ. File origin must be an absolute HTTP(S) origin without path, query, fragment, or userinfo; it is never inferred from Host or forwarded headers. Existing operator-managed permissions are preserved. Examples:
@@ -177,4 +187,4 @@ curl -i http://127.0.0.1:8080/
 
 ## CI
 
-CI has five jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs `go vet -tags production ./...` and `go test -tags production ./...`, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded-production browser suite (including the slow-upload and encrypted-adversarial qualification). `qualify` runs `scripts/qualify-release.sh` with the synthetic `v0.0.0-test` version: full Go suite, race suite, repeated concurrency stress, deployment/systemd checks, deterministic amd64/arm64 package build and verification, backup/restore proof, and shutdown-under-load proof. It never publishes a release. Longer fuzz campaigns (`make fuzz`) and performance baselines (`make benchmark`) are intentionally manual/pre-release rather than every-push CI. Action references are immutable SHAs annotated with their upstream major tag in the workflow.
+CI has five jobs. `backend` runs formatting, `go vet`, all Go tests, and a default-tag build. `frontend` runs a frozen pnpm install, TypeScript checking, Vitest, and the Vite production build. `e2e` runs the existing Vite-backed real-browser suite. `production` installs Chromium, builds and stages the production frontend, runs production-tagged Go vet/tests, builds the single self-contained binary, runs the isolated-binary proof, and runs the embedded production E2E suite plus the public Turnstile-mode and real-Cap-widget suites. `qualify` runs `scripts/qualify-release.sh` with the synthetic `v0.0.0-test` version: full Go suite, race suite, repeated concurrency stress, deployment/systemd checks, deterministic amd64/arm64 package build and verification, backup/restore proof, and shutdown-under-load proof. It never publishes a release. Longer fuzz campaigns (`make fuzz`) and performance baselines (`make benchmark`) are intentionally manual/pre-release rather than every-push CI. Action references are immutable SHAs annotated with their upstream major tag in the workflow.

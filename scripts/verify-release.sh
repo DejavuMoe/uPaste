@@ -103,9 +103,7 @@ grep -Fq "go: go" <<<"$version_output" || fail "packaged binary does not report 
 # 4. Runtime proof and restart persistence.
 data_dir="$work/data"
 mkdir -p "$data_dir"
-base=$(( (RANDOM % 1000) + 45000 ))
-app_port=$base
-file_port=$((base + 1))
+read -r app_port file_port < <(release_pick_ports)
 log_file="$work/server.log"
 sample_file="$work/sample.bin"
 downloaded_file="$work/downloaded.bin"

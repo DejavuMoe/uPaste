@@ -13,6 +13,7 @@ run_fuzz() {
   go test -run '^$' -fuzz "^${target}$" -fuzztime "$duration" "$package"
 }
 
+run_fuzz ./internal/admin FuzzParseAdminToken
 run_fuzz ./internal/capability FuzzParseShareID
 run_fuzz ./internal/capability FuzzOwnerTokenParsing
 run_fuzz ./internal/abuse FuzzClientIP

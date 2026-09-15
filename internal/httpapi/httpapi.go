@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	jsonv1 "encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"path"
 	"strconv"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/DejavuMoe/uPaste/internal/abuse"
 	"github.com/DejavuMoe/uPaste/internal/capability"
+	"github.com/DejavuMoe/uPaste/internal/challenge"
 	"github.com/DejavuMoe/uPaste/internal/domain"
 	"github.com/DejavuMoe/uPaste/internal/objectstore"
 	"github.com/DejavuMoe/uPaste/internal/share"
@@ -40,18 +43,40 @@ type API struct {
 	fileOrigin string
 	log        *slog.Logger
 	abuse      *abuse.Control
+	options    Options
 }
 
 func New(shares *share.Service, fileOrigin string, log *slog.Logger) http.Handler {
 	return NewWithAbuse(shares, fileOrigin, log, abuse.New(abuse.Config{Disabled: true}))
 }
 func NewWithAbuse(shares *share.Service, fileOrigin string, log *slog.Logger, control *abuse.Control) http.Handler {
-	api := &API{shares: shares, fileOrigin: fileOrigin, log: log, abuse: control}
+	return NewWithOptions(shares, fileOrigin, log, control, Options{})
+}
+
+// Options configures public-mode retention, challenge enforcement, and admin
+// surface visibility for the API handler.
+type Options struct {
+	Public           bool
+	PublicDefaultTTL time.Duration
+	PublicMaxTTL     time.Duration
+	Challenge        challenge.Verifier
+	ChallengeConfig  challenge.PublicConfig
+	ChallengeTimeout time.Duration
+	AdminEnabled     bool
+}
+
+func NewWithOptions(shares *share.Service, fileOrigin string, log *slog.Logger, control *abuse.Control, options Options) http.Handler {
+	if options.ChallengeTimeout <= 0 {
+		options.ChallengeTimeout = 10 * time.Second
+	}
+	api := &API{shares: shares, fileOrigin: fileOrigin, log: log, abuse: control, options: options}
 	return securityHeaders(http.HandlerFunc(api.route))
 }
 
 func (api *API) route(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/api/v1/config":
+		api.publicConfig(w, r)
 	case r.URL.Path == "/api/v1/shares":
 		api.collection(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/shares/"):
@@ -275,6 +300,9 @@ type patchRequest struct {
 }
 
 func (api *API) create(w http.ResponseWriter, r *http.Request) {
+	if !api.requireChallenge(w, r) {
+		return
+	}
 	if !requireIdentityEncoding(w, r, api.writeError) {
 		return
 	}
@@ -761,7 +789,7 @@ func (api *API) serviceError(w http.ResponseWriter, operation string, err error)
 		api.writeError(w, http.StatusGone, "expired", "share expired")
 	case errors.Is(err, share.ErrUnauthorized):
 		api.unauthorized(w)
-	case errors.Is(err, share.ErrExpiration), errors.Is(err, share.ErrEmptyPatch):
+	case errors.Is(err, share.ErrExpiration), errors.Is(err, share.ErrEmptyPatch), errors.Is(err, share.ErrRetention):
 		api.writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, share.ErrInvalidText):
 		api.writeError(w, http.StatusBadRequest, "invalid_request", "text content is invalid")
@@ -864,4 +892,72 @@ func (api *API) writeJSON(w http.ResponseWriter, status int, value any) {
 	if err := jsonv1.NewEncoder(w).Encode(value); err != nil {
 		api.log.Error("write response failed", "error", err)
 	}
+}
+
+// ChallengeHeader is the dedicated transient header carrying a challenge token.
+const ChallengeHeader = "X-uPaste-Challenge"
+
+func (api *API) publicConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		api.writeError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
+		return
+	}
+	type retentionConfig struct {
+		DefaultSeconds int64 `json:"default_seconds"`
+		MaxSeconds     int64 `json:"max_seconds"`
+	}
+	response := struct {
+		DeploymentMode string                  `json:"deployment_mode"`
+		AdminEnabled   bool                    `json:"admin_enabled"`
+		Retention      *retentionConfig        `json:"retention,omitempty"`
+		Challenge      *challenge.PublicConfig `json:"challenge,omitempty"`
+	}{
+		DeploymentMode: "private",
+		AdminEnabled:   api.options.AdminEnabled,
+	}
+	if api.options.Public {
+		response.DeploymentMode = "public"
+		response.Retention = &retentionConfig{
+			DefaultSeconds: int64(api.options.PublicDefaultTTL.Seconds()),
+			MaxSeconds:     int64(api.options.PublicMaxTTL.Seconds()),
+		}
+		if api.options.ChallengeConfig.Provider != "" {
+			publicChallenge := api.options.ChallengeConfig
+			response.Challenge = &publicChallenge
+		}
+	}
+	api.writeJSON(w, http.StatusOK, response)
+}
+
+func (api *API) requireChallenge(w http.ResponseWriter, r *http.Request) bool {
+	if api.options.Challenge == nil {
+		return true
+	}
+	values := r.Header.Values(ChallengeHeader)
+	if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+		api.writeError(w, http.StatusForbidden, "challenge_required", "challenge verification required")
+		return false
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), api.options.ChallengeTimeout)
+	defer cancel()
+	err := api.options.Challenge.Verify(ctx, values[0], remoteIP(r))
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, challenge.ErrInvalid):
+		api.writeError(w, http.StatusForbidden, "challenge_failed", "challenge verification failed")
+	default:
+		api.log.Error("request failed", "operation", "verify challenge", "error", err)
+		api.writeError(w, http.StatusServiceUnavailable, "challenge_unavailable", "challenge provider unavailable")
+	}
+	return false
+}
+
+func remoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

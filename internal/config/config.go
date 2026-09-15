@@ -11,24 +11,52 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/DejavuMoe/uPaste/internal/admin"
+	"github.com/DejavuMoe/uPaste/internal/challenge"
 )
 
 const (
-	defaultAddr       = "127.0.0.1:8080"
-	defaultFileAddr   = "127.0.0.1:8081"
-	defaultFileOrigin = "http://127.0.0.1:8081"
-	defaultDataDir    = "./data"
+	defaultAddr             = "127.0.0.1:8080"
+	defaultFileAddr         = "127.0.0.1:8081"
+	defaultFileOrigin       = "http://127.0.0.1:8081"
+	defaultDataDir          = "./data"
+	defaultPublicDefaultTTL = 24 * time.Hour
+	defaultPublicMaxTTL     = 168 * time.Hour
+	defaultChallengeTimeout = 10 * time.Second
+)
+
+type Mode string
+
+const (
+	ModePrivate Mode = "private"
+	ModePublic  Mode = "public"
 )
 
 type LookupEnv func(string) (string, bool)
 
 type Config struct {
+	Mode           Mode
 	Addr           string
 	FileAddr       string
 	FileOrigin     string
 	TrustedProxies []netip.Prefix
 	DataDir        string
+
+	PublicDefaultTTL time.Duration
+	PublicMaxTTL     time.Duration
+
+	Challenge        challenge.Config
+	ChallengeTimeout time.Duration
+
+	AdminEnabled      bool
+	AdminVerifier     admin.Verifier
+	AdminCookieSecure bool
 }
+
+func (config Config) ChallengeEnabled() bool { return config.Challenge.Provider != "" }
+func (config Config) Public() bool           { return config.Mode == ModePublic }
 
 func Parse(args []string, lookup LookupEnv) (Config, error) {
 	addr := envOrDefault(lookup, "UPASTE_ADDR", defaultAddr)
@@ -51,6 +79,71 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
 	}
 
+	modeValue := strings.ToLower(strings.TrimSpace(envOrDefault(lookup, "UPASTE_DEPLOYMENT_MODE", string(ModePrivate))))
+	mode := Mode(modeValue)
+	if mode != ModePrivate && mode != ModePublic {
+		return Config{}, fmt.Errorf("invalid UPASTE_DEPLOYMENT_MODE %q", modeValue)
+	}
+
+	publicDefaultTTL, err := envDuration(lookup, "UPASTE_PUBLIC_DEFAULT_TTL", defaultPublicDefaultTTL)
+	if err != nil {
+		return Config{}, err
+	}
+	publicMaxTTL, err := envDuration(lookup, "UPASTE_PUBLIC_MAX_TTL", defaultPublicMaxTTL)
+	if err != nil {
+		return Config{}, err
+	}
+	if publicDefaultTTL <= 0 || publicMaxTTL <= 0 || publicDefaultTTL > publicMaxTTL {
+		return Config{}, errors.New("UPASTE_PUBLIC_DEFAULT_TTL must be > 0 and <= UPASTE_PUBLIC_MAX_TTL")
+	}
+
+	challengeTimeout, err := envDuration(lookup, "UPASTE_CHALLENGE_TIMEOUT", defaultChallengeTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+	if challengeTimeout <= 0 {
+		return Config{}, errors.New("UPASTE_CHALLENGE_TIMEOUT must be positive")
+	}
+
+	challengeConfig, err := parseChallenge(lookup)
+	if err != nil {
+		return Config{}, err
+	}
+	if mode == ModePrivate && challengeConfig.Provider != "" {
+		return Config{}, errors.New("UPASTE_CHALLENGE_PROVIDER is only supported in public deployment mode")
+	}
+	if mode == ModePublic && challengeConfig.Provider == "" {
+		return Config{}, errors.New("public deployment mode requires UPASTE_CHALLENGE_PROVIDER=cap or turnstile")
+	}
+	if challengeConfig.Provider != "" {
+		if err := challengeConfig.Validate(); err != nil {
+			return Config{}, fmt.Errorf("invalid challenge configuration: %w", err)
+		}
+	}
+
+	adminEnabled := false
+	var adminVerifier admin.Verifier
+	adminToken := strings.TrimSpace(envOrDefault(lookup, "UPASTE_ADMIN_TOKEN", ""))
+	if adminToken != "" {
+		token, err := admin.ParseToken(adminToken)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid UPASTE_ADMIN_TOKEN: %w", err)
+		}
+		adminEnabled = true
+		adminVerifier = token.Verifier()
+	}
+	if mode == ModePublic && !adminEnabled {
+		return Config{}, errors.New("public deployment mode requires UPASTE_ADMIN_TOKEN")
+	}
+	adminCookieSecure := mode == ModePublic
+	if raw, ok := lookupEnv(lookup, "UPASTE_ADMIN_COOKIE_SECURE"); ok && strings.TrimSpace(raw) != "" {
+		parsed, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid UPASTE_ADMIN_COOKIE_SECURE: %w", err)
+		}
+		adminCookieSecure = parsed
+	}
+
 	addr = strings.TrimSpace(addr)
 	fileAddr = strings.TrimSpace(fileAddr)
 	if err := validateAddress(addr); err != nil {
@@ -62,7 +155,7 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 	if addr == fileAddr {
 		return Config{}, errors.New("application and file listen addresses must differ")
 	}
-	fileOrigin, err := normalizeOrigin(fileOrigin)
+	fileOrigin, err = normalizeOrigin(fileOrigin)
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid file origin: %w", err)
 	}
@@ -81,7 +174,56 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("resolve data directory: %w", err)
 	}
 
-	return Config{Addr: addr, FileAddr: fileAddr, FileOrigin: fileOrigin, TrustedProxies: trustedProxies, DataDir: dataDir}, nil
+	return Config{
+		Mode:              mode,
+		Addr:              addr,
+		FileAddr:          fileAddr,
+		FileOrigin:        fileOrigin,
+		TrustedProxies:    trustedProxies,
+		DataDir:           dataDir,
+		PublicDefaultTTL:  publicDefaultTTL,
+		PublicMaxTTL:      publicMaxTTL,
+		Challenge:         challengeConfig,
+		ChallengeTimeout:  challengeTimeout,
+		AdminEnabled:      adminEnabled,
+		AdminVerifier:     adminVerifier,
+		AdminCookieSecure: adminCookieSecure,
+	}, nil
+}
+
+func parseChallenge(lookup LookupEnv) (challenge.Config, error) {
+	providerValue := strings.TrimSpace(envOrDefault(lookup, "UPASTE_CHALLENGE_PROVIDER", ""))
+	if providerValue == "" {
+		return challenge.Config{}, nil
+	}
+	provider, err := challenge.ParseProvider(providerValue)
+	if err != nil {
+		return challenge.Config{}, err
+	}
+	return challenge.Config{
+		Provider:           provider,
+		CapEndpoint:        strings.TrimSpace(envOrDefault(lookup, "UPASTE_CAP_ENDPOINT", "")),
+		CapSiteKey:         strings.TrimSpace(envOrDefault(lookup, "UPASTE_CAP_SITE_KEY", "")),
+		CapSecretKey:       strings.TrimSpace(envOrDefault(lookup, "UPASTE_CAP_SECRET_KEY", "")),
+		TurnstileSiteKey:   strings.TrimSpace(envOrDefault(lookup, "UPASTE_TURNSTILE_SITE_KEY", "")),
+		TurnstileSecretKey: strings.TrimSpace(envOrDefault(lookup, "UPASTE_TURNSTILE_SECRET_KEY", "")),
+		TurnstileHostname:  strings.TrimSpace(envOrDefault(lookup, "UPASTE_TURNSTILE_HOSTNAME", "")),
+	}, nil
+}
+
+func envDuration(lookup LookupEnv, name string, fallback time.Duration) (time.Duration, error) {
+	if lookup == nil {
+		return fallback, nil
+	}
+	value, ok := lookup(name)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", name, err)
+	}
+	return parsed, nil
 }
 
 func validateAddress(value string) error {
@@ -121,6 +263,13 @@ func parseCIDRs(value string) ([]netip.Prefix, error) {
 		prefixes = append(prefixes, prefix.Masked())
 	}
 	return prefixes, nil
+}
+
+func lookupEnv(lookup LookupEnv, name string) (string, bool) {
+	if lookup == nil {
+		return "", false
+	}
+	return lookup(name)
 }
 
 func envOrDefault(lookup LookupEnv, name, fallback string) string {

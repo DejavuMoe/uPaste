@@ -4,6 +4,8 @@ import { createStandardText, createEncryptedText, ApiError } from '../../app/api
 import { createNewEncryptedText, MAX_CONTENT_BYTES } from '../../crypto/encryptedText';
 import { Button } from '../../components/Button';
 import { ExpirationField, type ExpirationValue } from '../../components/ExpirationField';
+import { ChallengeGate } from '../challenge/ChallengeGate';
+import { useDeploymentConfig } from '../../app/config';
 
 export interface TextCreateSuccessData {
   shareId: string;
@@ -35,6 +37,16 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { config } = useDeploymentConfig();
+  const challengeConfig = config.challenge;
+  const requiresChallenge = !!challengeConfig;
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [challengeResetKey, setChallengeResetKey] = useState(0);
+  const expirationPolicy = {
+    mode: config.deployment_mode,
+    defaultSeconds: config.retention?.default_seconds,
+    maxSeconds: config.retention?.max_seconds,
+  };
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef<boolean>(true);
@@ -57,7 +69,7 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
   const isNearLimit = byteLength >= WARNING_BYTES_THRESHOLD && !isOverLimit;
   const isEmpty = byteLength === 0;
   const hasExpirationError = !!expiration.error;
-  const canSubmit = !isEmpty && !isOverLimit && !hasExpirationError && !isSubmitting;
+  const canSubmit = !isEmpty && !isOverLimit && !hasExpirationError && !isSubmitting && (!requiresChallenge || challengeToken !== null);
 
   // Report dirty state whenever content byteLength changes
   useEffect(() => {
@@ -67,6 +79,10 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || isSubmitting) return;
+    if (requiresChallenge && !challengeToken) {
+      setErrorMessage('Complete the human verification challenge before creating a share.');
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -87,7 +103,7 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
             },
             expires_at: expiresAt,
           },
-          controller.signal,
+          ...(requiresChallenge ? [challengeToken, controller.signal] : [controller.signal]),
         );
 
         if (!isMountedRef.current) return;
@@ -113,7 +129,7 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
             },
             expires_at: expiresAt,
           },
-          controller.signal,
+          ...(requiresChallenge ? [challengeToken, controller.signal] : [controller.signal]),
         );
 
         if (!isMountedRef.current) return;
@@ -143,6 +159,10 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
     } finally {
       if (isMountedRef.current) {
         setIsSubmitting(false);
+        if (requiresChallenge) {
+          setChallengeToken(null);
+          setChallengeResetKey((key) => key + 1);
+        }
       }
       abortControllerRef.current = null;
     }
@@ -224,6 +244,7 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
             value={expiration.preset}
             onChange={setExpiration}
             disabled={isSubmitting}
+            policy={expirationPolicy}
           />
         </div>
       </div>
@@ -242,6 +263,14 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
       )}
 
       {/* Editor Area */}
+      {requiresChallenge && challengeConfig && (
+        <ChallengeGate
+          challenge={challengeConfig}
+          onToken={setChallengeToken}
+          resetKey={challengeResetKey}
+        />
+      )}
+
       <div className="editor-container">
         <label htmlFor={editorId} className="sr-only">
           Share text content

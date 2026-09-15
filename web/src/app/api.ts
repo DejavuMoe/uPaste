@@ -66,30 +66,36 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export async function createStandardText(
   req: CreateStandardTextRequest,
+  challengeOrSignal?: string | null | AbortSignal,
   signal?: AbortSignal,
 ): Promise<CreateShareResponse> {
+  const challengeToken = typeof challengeOrSignal === 'string' ? challengeOrSignal : undefined
+  const abortSignal = challengeOrSignal instanceof AbortSignal ? challengeOrSignal : signal
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (challengeToken) headers['X-uPaste-Challenge'] = challengeToken
   const res = await fetch('/api/v1/shares', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(req),
-    signal,
+    signal: abortSignal,
   })
   return handleResponse<CreateShareResponse>(res)
 }
 
 export async function createEncryptedText(
   req: CreateEncryptedTextRequest,
+  challengeOrSignal?: string | null | AbortSignal,
   signal?: AbortSignal,
 ): Promise<CreateShareResponse> {
+  const challengeToken = typeof challengeOrSignal === 'string' ? challengeOrSignal : undefined
+  const abortSignal = challengeOrSignal instanceof AbortSignal ? challengeOrSignal : signal
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (challengeToken) headers['X-uPaste-Challenge'] = challengeToken
   const res = await fetch('/api/v1/shares', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(req),
-    signal,
+    signal: abortSignal,
   })
   return handleResponse<CreateShareResponse>(res)
 }
@@ -133,9 +139,27 @@ export async function deleteShare(id: string, ownerToken: string, signal?: Abort
 export function createFile(
   file: File,
   expiresAt: string | null,
-  onProgress?: (progress: UploadProgress) => void,
-  signal?: AbortSignal,
+  challengeOrProgress?: string | null | ((progress: UploadProgress) => void),
+  progressOrSignal?: ((progress: UploadProgress) => void) | AbortSignal,
+  maybeSignal?: AbortSignal,
 ): Promise<CreateShareResponse> {
+  let challengeToken: string | null | undefined
+  let onProgress: ((progress: UploadProgress) => void) | undefined
+  let signal: AbortSignal | undefined
+  if (typeof challengeOrProgress === 'function') {
+    onProgress = challengeOrProgress
+    signal = progressOrSignal as AbortSignal | undefined
+  } else if ((challengeOrProgress as unknown) instanceof AbortSignal) {
+    signal = challengeOrProgress as unknown as AbortSignal
+  } else {
+    challengeToken = challengeOrProgress
+    if (progressOrSignal instanceof AbortSignal) {
+      signal = progressOrSignal
+    } else {
+      onProgress = progressOrSignal as ((progress: UploadProgress) => void) | undefined
+      signal = maybeSignal
+    }
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
 
@@ -155,6 +179,7 @@ export function createFile(
     }
 
     xhr.open('POST', '/api/v1/shares')
+    if (challengeToken) xhr.setRequestHeader('X-uPaste-Challenge', challengeToken)
 
     if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (e: ProgressEvent) => {

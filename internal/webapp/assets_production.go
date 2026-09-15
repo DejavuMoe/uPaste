@@ -16,10 +16,10 @@ import (
 var embedded embed.FS
 
 // NewEmbedded returns a handler backed by the production bundle.
-func NewEmbedded() (*Handler, error) {
+func NewEmbedded(options Options) (*Handler, error) {
 	assets, err := fs.Sub(embedded, "dist")
 	if err != nil {
 		return nil, fmt.Errorf("open embedded frontend bundle: %w", err)
 	}
-	return New(assets)
+	return NewWithConfig(assets, options)
 }

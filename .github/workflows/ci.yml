@@ -107,6 +107,14 @@ jobs:
         env:
           UPASTE_BINARY: ${{ github.workspace }}/upaste
         run: pnpm --dir web e2e:production
+      - name: Qualify public Turnstile mode and admin login
+        env:
+          UPASTE_BINARY: ${{ github.workspace }}/upaste
+        run: pnpm --dir web e2e:public
+      - name: Qualify real Cap widget mode
+        env:
+          UPASTE_BINARY: ${{ github.workspace }}/upaste
+        run: pnpm --dir web e2e:cap
 
   qualify:
     runs-on: ubuntu-latest

@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const latestSchemaVersion = 4
+const latestSchemaVersion = 5
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
@@ -22,6 +22,7 @@ var migrations = []migration{
 	{2, "migrations/0002_standard_text_payloads.sql"},
 	{3, "migrations/0003_encrypted_text_payloads.sql"},
 	{4, "migrations/0004_file_payloads.sql"},
+	{5, "migrations/0005_admin_listing_indexes.sql"},
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

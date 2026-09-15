@@ -266,7 +266,7 @@ describe('TextCreateForm', () => {
 
   it('aborts in-flight request when component unmounts', () => {
     let capturedSignal: AbortSignal | undefined;
-    vi.spyOn(api, 'createStandardText').mockImplementation(async (_req, signal) => {
+    (vi.spyOn(api, 'createStandardText') as any).mockImplementation(async (_req: any, signal: any) => {
       capturedSignal = signal;
       return new Promise(() => {});
     });

@@ -111,7 +111,7 @@ describe('FileCreateForm', () => {
   });
 
   it('renders progress without fabricated percentage when lengthComputable is false', async () => {
-    vi.spyOn(api, 'createFile').mockImplementation(async (_file, _expiresAt, onProgress) => {
+    (vi.spyOn(api, 'createFile') as any).mockImplementation(async (_file: any, _expiresAt: any, onProgress: any) => {
       onProgress?.({
         loaded: 1024,
         total: 0,
@@ -142,9 +142,8 @@ describe('FileCreateForm', () => {
 
   it('submits file upload, triggers progress, and calls onSuccess', async () => {
     const onSuccess = vi.fn();
-    const createFileSpy = vi
-      .spyOn(api, 'createFile')
-      .mockImplementation(async (file, expiresAt, onProgress) => {
+    const createFileSpy = (vi.spyOn(api, 'createFile') as any)
+      .mockImplementation(async (file: any, expiresAt: any, onProgress: any) => {
         onProgress?.({
           loaded: 50,
           total: 100,
@@ -190,7 +189,7 @@ describe('FileCreateForm', () => {
 
   it('aborts active upload when component unmounts', () => {
     let capturedSignal: AbortSignal | undefined;
-    vi.spyOn(api, 'createFile').mockImplementation(async (_f, _e, _p, signal) => {
+    (vi.spyOn(api, 'createFile') as any).mockImplementation(async (_f: any, _e: any, _p: any, signal: AbortSignal) => {
       capturedSignal = signal;
       return new Promise(() => {});
     });

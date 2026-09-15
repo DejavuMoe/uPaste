@@ -15,7 +15,10 @@ import (
 	"time"
 
 	"github.com/DejavuMoe/uPaste/internal/abuse"
+	"github.com/DejavuMoe/uPaste/internal/admin"
+	"github.com/DejavuMoe/uPaste/internal/adminapi"
 	"github.com/DejavuMoe/uPaste/internal/buildinfo"
+	"github.com/DejavuMoe/uPaste/internal/challenge"
 	"github.com/DejavuMoe/uPaste/internal/config"
 	"github.com/DejavuMoe/uPaste/internal/database"
 	"github.com/DejavuMoe/uPaste/internal/fileapi"
@@ -30,7 +33,7 @@ import (
 // API and raw routes always reach the API handler, /healthz always reaches the
 // liveness mux, and only then may the embedded frontend handle a request.
 // A nil frontend preserves the development shape where Vite serves the UI.
-func newHandler(api http.Handler, frontend http.Handler) http.Handler {
+func newHandler(api http.Handler, adminHTTP http.Handler, frontend http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -40,6 +43,9 @@ func newHandler(api http.Handler, frontend http.Handler) http.Handler {
 		switch {
 		case r.URL.Path == "/healthz":
 			mux.ServeHTTP(w, r)
+			return
+		case adminHTTP != nil && (r.URL.Path == "/api/v1/admin" || strings.HasPrefix(r.URL.Path, "/api/v1/admin/")):
+			adminHTTP.ServeHTTP(w, r)
 			return
 		case strings.HasPrefix(r.URL.Path, "/api/"), r.URL.Path == "/raw", strings.HasPrefix(r.URL.Path, "/raw/"):
 			if api == nil {
@@ -107,9 +113,37 @@ func run(log *slog.Logger, args []string, stdout io.Writer) (err error) {
 		}
 	}()
 	shareService := share.NewWithStore(db, store, time.Now)
+	shareService.SetRetentionPolicy(share.RetentionPolicy{
+		Public:     cfg.Public(),
+		DefaultTTL: cfg.PublicDefaultTTL,
+		MaxTTL:     cfg.PublicMaxTTL,
+	})
 	control := abuse.New(abuse.Config{Trusted: cfg.TrustedProxies})
+	maintenanceService := maintenance.New(db, store)
 
-	frontend, err := webapp.NewEmbedded()
+	var challengeVerifier challenge.Verifier
+	if cfg.ChallengeEnabled() {
+		verifier, err := challenge.NewVerifier(cfg.Challenge, nil, cfg.ChallengeTimeout)
+		if err != nil {
+			return fmt.Errorf("initialize challenge verifier: %w", err)
+		}
+		challengeVerifier = verifier
+	}
+
+	var adminHTTP http.Handler
+	if cfg.AdminEnabled {
+		manager := admin.NewManager(cfg.AdminVerifier, admin.Options{SecureCookie: cfg.AdminCookieSecure, Now: time.Now})
+		adminHTTP = adminapi.New(shareService, manager, maintenanceService, cfg.FileOrigin, cfg.TrustedProxies, log, time.Now)
+		log.Info("superadmin enabled")
+	} else {
+		log.Info("superadmin disabled")
+	}
+
+	frontend, err := webapp.NewEmbedded(webapp.Options{
+		AdminEnabled:      cfg.AdminEnabled,
+		ChallengeProvider: string(cfg.Challenge.Provider),
+		CapEndpoint:       cfg.Challenge.CapEndpoint,
+	})
 	if err != nil {
 		return fmt.Errorf("initialize embedded frontend: %w", err)
 	}
@@ -119,7 +153,16 @@ func run(log *slog.Logger, args []string, stdout io.Writer) (err error) {
 		log.Info("embedded frontend enabled")
 	}
 
-	appServer := newServer(cfg.Addr, newHandler(httpapi.NewWithAbuse(shareService, cfg.FileOrigin, log, control), frontend))
+	apiHandler := httpapi.NewWithOptions(shareService, cfg.FileOrigin, log, control, httpapi.Options{
+		Public:           cfg.Public(),
+		PublicDefaultTTL: cfg.PublicDefaultTTL,
+		PublicMaxTTL:     cfg.PublicMaxTTL,
+		Challenge:        challengeVerifier,
+		ChallengeConfig:  cfg.Challenge.PublicConfig(),
+		ChallengeTimeout: cfg.ChallengeTimeout,
+		AdminEnabled:     cfg.AdminEnabled,
+	})
+	appServer := newServer(cfg.Addr, newHandler(apiHandler, adminHTTP, frontend))
 	fileServer := newServer(cfg.FileAddr, fileapi.NewWithAbuse(shareService, log, control))
 	fileListener, err := net.Listen("tcp", cfg.FileAddr)
 	if err != nil {
@@ -162,7 +205,7 @@ func run(log *slog.Logger, args []string, stdout io.Writer) (err error) {
 	maintenanceDone := make(chan struct{})
 	go func() {
 		defer close(maintenanceDone)
-		maintenance.Start(maintenanceCtx, maintenance.New(db, store), time.Now, log)
+		maintenance.Start(maintenanceCtx, maintenanceService, time.Now, log)
 	}()
 	defer func() { cancelMaintenance(); <-maintenanceDone }()
 	if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {

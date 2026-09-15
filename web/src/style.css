@@ -1271,3 +1271,96 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Phase 11: challenge and administration surfaces */
+.challenge-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.challenge-widget {
+  min-height: 32px;
+}
+
+.challenge-status {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.admin-card {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.admin-header,
+.admin-filters,
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.admin-header {
+  justify-content: space-between;
+}
+
+.admin-summary {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.admin-filters {
+  margin: var(--space-3) 0;
+}
+
+.admin-lookup {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.admin-table th,
+.admin-table td {
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: var(--space-2);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.admin-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+
+.admin-detail dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.admin-text-preview {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-code-bg);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+}

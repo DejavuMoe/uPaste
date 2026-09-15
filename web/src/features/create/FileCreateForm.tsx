@@ -3,6 +3,8 @@ import { createFile, ApiError } from '../../app/api';
 import type { UploadProgress } from '../../app/types';
 import { Button } from '../../components/Button';
 import { ExpirationField, type ExpirationValue } from '../../components/ExpirationField';
+import { ChallengeGate } from '../challenge/ChallengeGate';
+import { useDeploymentConfig } from '../../app/config';
 
 export interface FileCreateSuccessData {
   shareId: string;
@@ -34,6 +36,16 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDir
   const [statusText, setStatusText] = useState<string>('Create share');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const { config } = useDeploymentConfig();
+  const challengeConfig = config.challenge;
+  const requiresChallenge = !!challengeConfig;
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [challengeResetKey, setChallengeResetKey] = useState(0);
+  const expirationPolicy = {
+    mode: config.deployment_mode,
+    defaultSeconds: config.retention?.default_seconds,
+    maxSeconds: config.retention?.max_seconds,
+  };
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -127,6 +139,10 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDir
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile || isSubmitting || !!expiration.error) return;
+    if (requiresChallenge && !challengeToken) {
+      setErrorMessage('Complete the human verification challenge before creating a share.');
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -138,16 +154,17 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDir
     const expiresAt = expiration.resolveExpiresAt();
 
     try {
-      const res = await createFile(
-        selectedFile,
-        expiresAt,
-        (progress) => {
+      const res = await (requiresChallenge
+        ? createFile(selectedFile, expiresAt, challengeToken, (progress) => {
           if (!isMountedRef.current) return;
           setStatusText('Uploading…');
           setUploadProgress(progress);
-        },
-        controller.signal,
-      );
+        }, controller.signal)
+        : createFile(selectedFile, expiresAt, (progress) => {
+            if (!isMountedRef.current) return;
+            setStatusText('Uploading…');
+            setUploadProgress(progress);
+          }, controller.signal));
 
       if (!isMountedRef.current) return;
       onSuccess({
@@ -175,13 +192,17 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDir
       if (isMountedRef.current) {
         setIsSubmitting(false);
         setStatusText('Create share');
+        if (requiresChallenge) {
+          setChallengeToken(null);
+          setChallengeResetKey((key) => key + 1);
+        }
       }
       abortControllerRef.current = null;
     }
   };
 
   const hasExpirationError = !!expiration.error;
-  const canSubmit = !!selectedFile && !isSubmitting && !hasExpirationError;
+  const canSubmit = !!selectedFile && !isSubmitting && !hasExpirationError && (!requiresChallenge || challengeToken !== null);
 
   return (
     <form className="create-form file-create-form" onSubmit={handleSubmit} noValidate>
@@ -277,6 +298,14 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDir
         </div>
       )}
 
+      {requiresChallenge && challengeConfig && (
+        <ChallengeGate
+          challenge={challengeConfig}
+          onToken={setChallengeToken}
+          resetKey={challengeResetKey}
+        />
+      )}
+
       <div className="file-form-footer">
         <div className="form-field-group">
           <label htmlFor="file-expiration" className="form-label">
@@ -287,6 +316,7 @@ export const FileCreateForm: React.FC<FileCreateFormProps> = ({ onSuccess, onDir
             value={expiration.preset}
             onChange={setExpiration}
             disabled={isSubmitting}
+            policy={expirationPolicy}
           />
         </div>
 

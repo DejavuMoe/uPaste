@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@cap.js/wasm':
+        specifier: 0.0.7
+        version: 0.0.7
+      '@cap.js/widget':
+        specifier: 0.1.57
+        version: 0.1.57
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -89,6 +95,12 @@ packages:
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
+
+  '@cap.js/wasm@0.0.7':
+    resolution: {integrity: sha512-IgUjrPOUBaOjTp+BkrhfEBBeQ4An7fQiSWWezDy9Uvd+OdTYm4+h3AJU0j/CpHYayp7FltZU+UePC6p28oGQaw==}
+
+  '@cap.js/widget@0.1.57':
+    resolution: {integrity: sha512-IgWepPHHsn1FcB5msL/TQtZZixGm9KAp7rpNbDmdo/i10EhDA74TlMU9zbZ6H8wwcCtlond/m+pAcLr1RiQ1og==}
 
   '@csstools/color-helpers@6.1.1':
     resolution: {integrity: sha512-gLNsunvwf3mCi5u5o46/Z/JcJMnhbHSaZ69rkgPzNM3J4s8hWwpPUQB6/tt0EDFyCiWzxANlx+2LJwpYj4zS1w==}
@@ -1258,6 +1270,10 @@ snapshots:
   '@bramus/specificity@2.4.2':
     dependencies:
       css-tree: 3.2.1
+
+  '@cap.js/wasm@0.0.7': {}
+
+  '@cap.js/widget@0.1.57': {}
 
   '@csstools/color-helpers@6.1.1': {}
 

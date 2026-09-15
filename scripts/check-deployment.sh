@@ -55,6 +55,7 @@ require_line "$service" '^ReadWritePaths=/var/lib/upaste$'
 forbid_line "$service" '^User=root$'
 
 # Environment example: loopback listeners, distinct File origin, loopback-only trust.
+require_line "$env_example" '^UPASTE_DEPLOYMENT_MODE=private$'
 require_line "$env_example" '^UPASTE_ADDR=127\.0\.0\.1:8080$'
 require_line "$env_example" '^UPASTE_FILE_ADDR=127\.0\.0\.1:8081$'
 require_line "$env_example" '^UPASTE_FILE_ORIGIN=https://files\.example\.com$'
@@ -62,6 +63,7 @@ require_line "$env_example" '^UPASTE_DATA_DIR=/var/lib/upaste$'
 require_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=127\.0\.0\.1/32,::1/128$'
 forbid_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=.*0\.0\.0\.0/0'
 forbid_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=.*::/0'
+forbid_line "$env_example" '^UPASTE_ADMIN_TOKEN=up_a1_[A-Za-z0-9_-]{43}$'
 
 # Nginx: two server names, two loopback upstreams, large body/timeouts, no CORS.
 require_line "$nginx" 'server_name paste\.example\.com;'

@@ -1,4 +1,4 @@
-.PHONY: format check test build e2e prod-e2e prove-embedded dist verify-dist deploy-check qualify-release fuzz benchmark load-smoke dev-backend dev-frontend install clean
+.PHONY: format check test build e2e prod-e2e e2e-public e2e-cap prove-embedded dist verify-dist deploy-check qualify-release fuzz benchmark load-smoke dev-backend dev-frontend install clean
 
 format:
 	mise exec -- ./scripts/gofmt write
@@ -22,6 +22,13 @@ e2e:
 
 prod-e2e:
 	mise exec -- pnpm --dir web e2e:production
+
+# Public Turnstile-mode and real Cap-widget browser qualification.
+e2e-public:
+	mise exec -- pnpm --dir web e2e:public
+
+e2e-cap:
+	mise exec -- pnpm --dir web e2e:cap
 
 prove-embedded: build
 	mise exec -- ./scripts/prove-embedded-binary.sh ./upaste

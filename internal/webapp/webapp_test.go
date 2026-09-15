@@ -10,7 +10,7 @@ import (
 
 func testBundle() fstest.MapFS {
 	return fstest.MapFS{
-		"index.html":              &fstest.MapFile{Data: []byte("<!doctype html><html><body><div id=\"root\"></div></body></html>")},
+		"index.html":              &fstest.MapFile{Data: []byte("<!doctype html><html><head></head><body><div id=\"root\"></div></body></html>")},
 		"assets/index-abc123.js":  &fstest.MapFile{Data: []byte("console.log('ok')")},
 		"assets/index-abc123.css": &fstest.MapFile{Data: []byte("body{margin:0}")},
 		"favicon.svg":             &fstest.MapFile{Data: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"/>")},
@@ -123,7 +123,7 @@ func TestFrontendSecurityHeaders(t *testing.T) {
 				t.Fatalf("X-Frame-Options = %q", got)
 			}
 			csp := header.Get("Content-Security-Policy")
-			if csp != contentSecurityPolicy {
+			if csp == "" || !strings.Contains(csp, "default-src 'self'") {
 				t.Fatalf("Content-Security-Policy = %q", csp)
 			}
 			if strings.Contains(csp, "unsafe-eval") || strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "*") {
@@ -198,5 +198,64 @@ func TestNewRejectsInvalidBundles(t *testing.T) {
 	}
 	if _, err := New(fstest.MapFS{"index.html": &fstest.MapFile{Data: nil}}); err == nil {
 		t.Fatal("New(empty index) error = nil, want error")
+	}
+}
+
+func TestAdminRouteRequiresAdminEnabled(t *testing.T) {
+	bundle := testBundle()
+	disabled, err := New(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	disabled.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("disabled /admin status = %d, want 404", recorder.Code)
+	}
+
+	enabled, err := NewWithOptions(bundle, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	enabled.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `id="root"`) {
+		t.Fatalf("enabled /admin status/body = %d/%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestProviderAwareCSP(t *testing.T) {
+	bundle := testBundle()
+	capHandler, err := NewWithConfig(bundle, Options{ChallengeProvider: "cap", CapEndpoint: "https://cap.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	capHandler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	capCSP := recorder.Header().Get("Content-Security-Policy")
+	for _, required := range []string{"https://cap.example.com", "'wasm-unsafe-eval'", "'nonce-"} {
+		if !strings.Contains(capCSP, required) {
+			t.Fatalf("cap CSP missing %q: %q", required, capCSP)
+		}
+	}
+	if !strings.Contains(recorder.Body.String(), `name="upaste-csp-nonce"`) {
+		t.Fatal("cap index did not carry a CSP nonce meta tag")
+	}
+	if strings.Contains(capCSP, "'unsafe-inline'") || strings.Contains(capCSP, "'unsafe-eval'") {
+		t.Fatalf("cap CSP weakened: %q", capCSP)
+	}
+
+	turnstileHandler, err := NewWithConfig(bundle, Options{ChallengeProvider: "turnstile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	turnstileHandler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	turnstileCSP := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(turnstileCSP, "https://challenges.cloudflare.com") {
+		t.Fatalf("turnstile CSP missing Cloudflare origin: %q", turnstileCSP)
+	}
+	if strings.Contains(turnstileCSP, "wasm-unsafe-eval") || strings.Contains(turnstileCSP, "upaste-csp-nonce") {
+		t.Fatalf("turnstile CSP carried unrelated Cap permissions: %q", turnstileCSP)
 	}
 }

@@ -1,14 +1,17 @@
 # Architecture
 
-## Current implementation (through Phase 9)
+## Current implementation (through Phase 11)
 
 uPaste is a small modular monolith. `cmd/upaste` parses configuration, prepares and migrates SQLite, opens local object storage, then starts two Go `net/http` processes using `http.ServeMux`, `slog`, bounded HTTP timeouts, a 32 KiB header limit, graceful SIGINT/SIGTERM shutdown, and loopback by default. `GET /healthz` remains a database-independent liveness check.
 
-The application listener serves the embedded production React frontend, `/api/v1/*`, `/raw/*`, and `/healthz`. The independent File listener serves only `/f/{id}` as an attachment. File bytes are never served from the application origin and `/f/*` returns 404 there.
+The application listener serves the embedded production React frontend, `/api/v1/*`, `/raw/*`, and `/healthz`. Public mode adds `GET /api/v1/config` for non-secret runtime policy, requires challenge verification only for `POST /api/v1/shares`, and exposes `/api/v1/admin/*` plus the `/admin` SPA route only when a Superadmin token is configured. Private mode remains the default and keeps anonymous creation without a challenge and optional/never expiration. The independent File listener serves only `/f/{id}` as an attachment. File bytes are never served from the application origin and `/f/*` returns 404 there.
 
 The implemented internal packages are deliberately limited:
 
 - `domain`: closed V1 classifications, privacy compatibility, and pure expiration semantics.
+- `challenge`: Cap and Turnstile server-side challenge verification with fail-closed provider errors.
+- `admin`: one Superadmin token verifier, bounded login limiter, and in-memory CSRF-bound sessions.
+- `adminapi`: bounded governance API for summary, listing/inspection, delete, bulk delete, and expired cleanup.
 - `capability`: canonical random Share IDs and owner capabilities plus SHA-256 verification.
 - `config`: CLI/environment/default resolution for addresses, File origin, trusted proxies, and data directory.
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
@@ -20,7 +23,7 @@ The implemented internal packages are deliberately limited:
 - `maintenance`: deterministic purge/reconciliation pass plus one periodic worker.
 - `abuse`: trusted-proxy client identity, bounded process-local limiters, and File gates.
 
-There is no generic repository layer, encrypted File behavior, distributed limiter, or storage quota. The production React UI is implemented and embedded; development still serves the UI from the Vite development server.
+There is no ordinary user/account/role system, encrypted File behavior, distributed limiter, or storage quota. The production React UI is implemented and embedded; development still serves the UI from the Vite development server. Public mode uses a challenge-gated anonymous creation path and creation-anchored finite retention; Superadmin governance supports inspect-and-remove without content editing or decryption.
 
 The browser module `web/src/crypto/encryptedText.ts` owns key generation, AES-256-GCM encryption/decryption, the binary plaintext envelope, and strict key-fragment/base64url handling. The HTTP server never decrypts and has no production AES key handling. API responses model Standard, Encrypted, and File payloads explicitly so irrelevant zero-valued fields are never serialized.
 
@@ -52,7 +55,7 @@ X-Frame-Options: DENY
 Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'
 ```
 
-The policy requires no `unsafe-eval`, wildcard sources, external script hosts, or external font hosts. File downloads remain direct navigations to the separately configured File origin, which has its own attachment/CSP/no-store/no-referrer/nosniff/frame-denial policy.
+The private baseline policy uses no `unsafe-eval`, `unsafe-inline`, wildcard sources, external script hosts, or external font hosts. Public challenge modes extend it only with the exact configured Cap origin (plus `wasm-unsafe-eval`, a worker `blob:` allowance, and per-response nonces) or the canonical Cloudflare Turnstile origin. File downloads remain direct navigations to the separately configured File origin, which has its own attachment/CSP/no-store/no-referrer/nosniff/frame-denial policy.
 
 ## Build metadata and release packaging
 
@@ -80,7 +83,7 @@ _txlock=immediate
 
 The pool is conservatively bounded to four open and four idle connections without an arbitrary connection lifetime. Immediate write transactions were enabled after a four-owner-update/four-independent-create stress test repeatedly reproduced deferred-transaction `SQLITE_BUSY` and `SQLITE_BUSY_SNAPSHOT`; the same test passes repeatedly with immediate acquisition and the existing five-second busy timeout. The pool, WAL mode, and timeout remain unchanged. Shared cache, OFD locking, loadable extensions, and other speculative SQLite tuning are not enabled.
 
-Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates Share metadata and a partial expiration index; immutable migration 2 adds `standard_text_payloads`; migration 3 adds `encrypted_text_payloads`; migration 4 adds `file_payloads` and File payload/privacy triggers. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
+Embedded, forward-only SQL migrations use `PRAGMA user_version`. Version 1 creates Share metadata and a partial expiration index; immutable migration 2 adds `standard_text_payloads`; migration 3 adds `encrypted_text_payloads`; migration 4 adds `file_payloads` and File payload/privacy triggers; migration 5 adds admin listing indexes on `created_at` and `(payload_kind, privacy_mode, created_at)`. Missing migrations run transactionally in ascending order, successful version advancement is committed with the migration, and databases newer than the binary are refused.
 
 ## Frozen V1 boundaries
 

@@ -127,6 +127,94 @@ private:  127.0.0.1:8080 application listener
 Do not expose 8080 or 8081 directly to the Internet. TLS terminates at the
 trusted reverse proxy. uPaste does not provide in-process TLS.
 
+## Public mode, challenges, and Superadmin
+
+### Public mode and retention
+
+Public mode is opt-in and fails closed at startup unless exactly one challenge
+provider and a valid `UPASTE_ADMIN_TOKEN` are configured.
+
+```text
+UPASTE_DEPLOYMENT_MODE=public
+UPASTE_PUBLIC_DEFAULT_TTL=24h
+UPASTE_PUBLIC_MAX_TTL=168h
+```
+
+Public Shares always expire. Creation without an explicit expiration receives
+the default TTL; requested and patched expiration is bounded by
+`created_at + UPASTE_PUBLIC_MAX_TTL`. An OwnerToken cannot extend a public Share
+beyond that creation-anchored horizon or clear its expiration.
+
+### Cap (recommended self-hosted provider)
+
+```text
+UPASTE_CHALLENGE_PROVIDER=cap
+UPASTE_CAP_ENDPOINT=https://cap.example.com
+UPASTE_CAP_SITE_KEY=<site key>
+UPASTE_CAP_SECRET_KEY=<site secret>
+```
+
+Recommended public topology:
+
+```text
+paste.example.com  -> uPaste application listener
+files.example.com  -> uPaste File listener
+cap.example.com    -> reverse proxy -> Cap Standalone
+```
+
+Cap Standalone is an external service and is not bundled in the uPaste binary or
+release archive. Do not expose Cap's backend listener directly to the Internet
+when it trusts forwarded client-IP headers. The reverse proxy must overwrite
+`X-Forwarded-For` with the client IP it actually observed, and Cap Standalone
+should allow only the exact uPaste application origin:
+
+```text
+CORS_ORIGIN=https://paste.example.com
+```
+
+Do not use the Cap dashboard admin key as `UPASTE_CAP_SECRET_KEY`. uPaste uses
+the site secret only for server-side `siteverify`.
+
+### Cloudflare Turnstile (alternative)
+
+```text
+UPASTE_CHALLENGE_PROVIDER=turnstile
+UPASTE_TURNSTILE_SITE_KEY=<site key>
+UPASTE_TURNSTILE_SECRET_KEY=<secret key>
+UPASTE_TURNSTILE_HOSTNAME=paste.example.com
+```
+
+uPaste calls the canonical Cloudflare Siteverify API from the Go backend and
+requires `success == true`, the configured hostname, and
+`action == "create_share"`. The secret never reaches the browser. Turnstile can
+be used even when the uPaste site is not proxied through Cloudflare.
+
+### Superadmin
+
+Generate the token offline; never use a human password. For example:
+
+```sh
+printf 'up_a1_'; head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=
+'; echo
+```
+
+```text
+UPASTE_ADMIN_TOKEN=up_a1_<generated>
+```
+
+`/admin` and `/api/v1/admin/*` are 404 unless the token is configured. Admin
+sessions are in-memory, restart-invalidated, stored only as a SHA-256 verifier,
+and delivered as a host-only HttpOnly `SameSite=Strict` cookie (Secure in public
+mode). Destructive admin requests additionally require the session-bound
+`X-uPaste-CSRF` header. Admin cannot edit Share content, recover OwnerTokens, or
+decrypt encrypted Shares. A restart requires signing in again.
+
+The embedded frontend applies provider-specific CSP automatically. Private mode
+keeps the strict baseline policy; Cap adds only its configured origin,
+`'wasm-unsafe-eval'`, a worker `blob:` allowance, and a per-response nonce;
+Turnstile adds only the canonical Cloudflare challenge origin. No mode uses
+`unsafe-inline`, `unsafe-eval`, or wildcard sources.
+
 ## 6. Health checks and logs
 
 ```sh
@@ -256,3 +344,14 @@ bytes.
   the public File origin exactly and use HTTPS in production.
 - **Uploads fail at the proxy:** raise the reverse-proxy body limit above the
   64 MiB File limit and keep read/send timeouts at or above 600 seconds.
+- **Public mode refuses to start:** set exactly one challenge provider with all
+  required Cap/Turnstile values, `UPASTE_ADMIN_TOKEN`, and
+  `0 < UPASTE_PUBLIC_DEFAULT_TTL <= UPASTE_PUBLIC_MAX_TTL`.
+- **Challenge verification fails:** confirm the configured provider origin is
+  reachable from the uPaste host, Cap uses the site secret rather than the
+  dashboard admin key, Turnstile hostname/action match, and the host clock is
+  correct. Provider failures fail closed by design.
+- **`/admin` and admin APIs return 404:** `UPASTE_ADMIN_TOKEN` is not
+  configured or is malformed.
+- **Admin login returns 429:** the dedicated login limiter is active; wait and
+  retry. Sessions are in-memory, so a restart also requires signing in again.

@@ -33,8 +33,16 @@ var (
 	ErrInvalidEncryptedText = errors.New("encrypted text payload is invalid")
 	ErrPayloadMismatch      = errors.New("payload does not match Share privacy mode")
 	ErrExpiration           = errors.New("expiration must be in the future")
+	ErrRetention            = errors.New("expiration exceeds the configured public retention limit")
 	ErrEmptyPatch           = errors.New("patch must change text or expiration")
 )
+
+// RetentionPolicy is the authoritative public retention bound.
+type RetentionPolicy struct {
+	Public     bool
+	DefaultTTL time.Duration
+	MaxTTL     time.Duration
+}
 
 type CleanupError struct {
 	StorageKey string
@@ -93,9 +101,15 @@ type Patch struct {
 }
 
 type Service struct {
-	db    *sql.DB
-	store objectstore.Store
-	now   func() time.Time
+	db        *sql.DB
+	store     objectstore.Store
+	now       func() time.Time
+	retention RetentionPolicy
+}
+
+// SetRetentionPolicy installs the authoritative public retention policy.
+func (service *Service) SetRetentionPolicy(policy RetentionPolicy) {
+	service.retention = policy
 }
 
 func New(db *sql.DB, now func() time.Time) *Service {
@@ -133,7 +147,7 @@ func (s *Service) CreateFile(ctx context.Context, filename string, staged object
 	}
 	defer staged.Abort()
 	now := s.serverNow()
-	expiresAt, err := normalizeExpiration(expiration, now)
+	expiresAt, err := s.normalizeExpiration(expiration, now)
 	if err != nil {
 		return Share{}, capability.OwnerToken{}, err
 	}
@@ -202,7 +216,7 @@ func (s *Service) OpenFile(ctx context.Context, id capability.ShareID) (Share, o
 
 func (s *Service) create(ctx context.Context, privacy domain.PrivacyMode, text *Text, encrypted *EncryptedText, expiration *time.Time) (Share, capability.OwnerToken, error) {
 	now := s.serverNow()
-	expiresAt, err := normalizeExpiration(expiration, now)
+	expiresAt, err := s.normalizeExpiration(expiration, now)
 	if err != nil {
 		return Share{}, capability.OwnerToken{}, err
 	}
@@ -293,7 +307,7 @@ func (s *Service) Update(ctx context.Context, id capability.ShareID, candidate s
 	var expiresAt *time.Time
 	var result sql.Result
 	if patch.ExpirationSet {
-		expiresAt, err = normalizeExpiration(patch.ExpiresAt, now)
+		expiresAt, err = s.validateUpdatedExpiration(patch.ExpiresAt, authorization.createdAt, now)
 		if err != nil {
 			return Share{}, err
 		}
@@ -447,7 +461,14 @@ func validateEncryptedText(value EncryptedText) error {
 	return nil
 }
 
-func normalizeExpiration(value *time.Time, now time.Time) (*time.Time, error) {
+func (service *Service) normalizeExpiration(value *time.Time, now time.Time) (*time.Time, error) {
+	if service.retention.Public {
+		if value == nil {
+			expiresAt := now.Add(service.retention.DefaultTTL)
+			return &expiresAt, nil
+		}
+		return service.validateUpdatedExpiration(value, now, now)
+	}
 	if value == nil {
 		return nil, nil
 	}
@@ -458,6 +479,25 @@ func normalizeExpiration(value *time.Time, now time.Time) (*time.Time, error) {
 	return &normalized, nil
 }
 
+func (service *Service) validateUpdatedExpiration(value *time.Time, createdAt, now time.Time) (*time.Time, error) {
+	if value == nil {
+		if service.retention.Public {
+			return nil, ErrRetention
+		}
+		return nil, nil
+	}
+	normalized := value.UTC().Truncate(time.Millisecond)
+	if !normalized.After(now) {
+		return nil, ErrExpiration
+	}
+	if service.retention.Public {
+		horizon := createdAt.Add(service.retention.MaxTTL)
+		if normalized.After(horizon) {
+			return nil, ErrRetention
+		}
+	}
+	return &normalized, nil
+}
 func nullableMillis(value *time.Time) any {
 	if value == nil {
 		return nil
@@ -470,9 +510,10 @@ type queryRower interface {
 }
 
 type authorizationRecord struct {
-	kind     domain.PayloadKind
-	privacy  domain.PrivacyMode
-	verifier capability.Verifier
+	kind      domain.PayloadKind
+	privacy   domain.PrivacyMode
+	verifier  capability.Verifier
+	createdAt time.Time
 }
 
 func loadAuthorization(ctx context.Context, db queryRower, id capability.ShareID, now time.Time) (authorizationRecord, error) {
@@ -480,10 +521,11 @@ func loadAuthorization(ctx context.Context, db queryRower, id capability.ShareID
 	var kind, privacy string
 	var verifier []byte
 	var expiresAt sql.NullInt64
+	var createdAt int64
 	err := db.QueryRowContext(ctx, `
-		SELECT payload_kind, privacy_mode, owner_token_verifier, expires_at
+		SELECT payload_kind, privacy_mode, owner_token_verifier, created_at, expires_at
 		FROM shares WHERE id = ?
-	`, id.String()).Scan(&kind, &privacy, &verifier, &expiresAt)
+	`, id.String()).Scan(&kind, &privacy, &verifier, &createdAt, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return authorizationRecord{}, ErrNotFound
 	}
@@ -502,6 +544,7 @@ func loadAuthorization(ctx context.Context, db queryRower, id capability.ShareID
 		return authorizationRecord{}, errors.New("load owner verifier: invalid length")
 	}
 	copy(record.verifier[:], verifier)
+	record.createdAt = time.UnixMilli(createdAt).UTC()
 	if isExpired(expiresAt, now) {
 		return authorizationRecord{}, ErrExpired
 	}

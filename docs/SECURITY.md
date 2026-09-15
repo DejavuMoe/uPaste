@@ -18,7 +18,7 @@ These are mandatory design constraints. Later implementation must fail closed wh
 14. Every File delivery is an attachment regardless of detected MIME type.
 15. Filename extensions and browser-declared MIME types are not authoritative.
 16. Logs never contain request bodies, Authorization values, passwords, owner tokens, encryption keys, or plaintext encrypted-share content.
-17. No authentication cookies are planned for the initial anonymous capability model.
+17. No ordinary user authentication or account cookies exist. The only authentication cookie is the Superadmin session cookie described below; anonymous users remain capability-based.
 18. The API is same-origin by default; permissive CORS is disabled.
 19. Security-sensitive defaults fail closed.
 
@@ -86,6 +86,14 @@ make load-smoke  # bounded concurrent load exercising rate limits, gates, and re
 The security suite also locks capability/Share-ID/path attack matrices, JSON and multipart adversarial behavior, interrupted-upload cleanup, raw/File-origin attachment semantics, browser encrypted-text tamper rejection, Markdown sanitization, trusted-proxy spoofing resistance, rate-limit and concurrency-gate release paths, SQLite integrity, migration compatibility, and object-store confinement.
 
 Release archives include a deterministic `BUILDINFO` file (version, commit, build date, Go version, target) in addition to embedded `upaste --version` metadata and `SHA256SUMS`. No license has been selected or implied. No real version tag or GitHub Release is created by the qualification gate.
+
+## Public abuse controls and Superadmin governance
+
+Public mode requires exactly one server-side challenge verifier (Cap or Turnstile) and a high-entropy Superadmin token; startup fails closed if either is missing. Challenge tokens travel only in the transient `X-uPaste-Challenge` request header for `POST /api/v1/shares`, never in JSON, multipart metadata, URLs, cookies, history, or browser storage. Provider verification is server-side, bounded by a timeout, and fails closed on provider errors; the existing IP/global rate limiters run before challenge verification. Public Shares always expire and expiration is anchored to `created_at + max_ttl`, so repeated OwnerToken PATCH requests cannot create permanent anonymous storage.
+
+Superadmin is one independently generated `up_a1_<256-bit unpadded base64url>` capability. Only its SHA-256 verifier is retained at startup. Admin sessions are in-memory, restart-invalidated, at most 8 hours, use a host-only HttpOnly `SameSite=Strict` cookie (Secure in public mode), and require a session-bound `X-uPaste-CSRF` header for logout and every destructive action. Admin APIs send no CORS headers. Admin can inspect server-visible metadata/content, delete, bulk-delete, and run the established expired-cleanup pass. Admin cannot edit or replace content, recover OwnerTokens, or decrypt encrypted Shares; encrypted content remains ciphertext-only and the UI exposes only protocol, nonce, and ciphertext size.
+
+CSP stays provider-aware but fail-closed: private mode keeps the strict baseline, Cap adds only its configured origin plus `'wasm-unsafe-eval'`, a worker `blob:` allowance, and per-response nonces, and Turnstile adds only the canonical Cloudflare challenge origin. No mode uses `unsafe-inline`, `unsafe-eval`, or wildcard sources.
 
 ## Repository secret policy
 

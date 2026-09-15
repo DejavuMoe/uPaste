@@ -10,9 +10,13 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:production": "playwright test --config playwright.production.config.ts",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build",
+    "e2e:public": "playwright test --config playwright.public.config.ts",
+    "e2e:cap": "playwright test --config playwright.cap.config.ts"
   },
   "dependencies": {
+    "@cap.js/wasm": "0.0.7",
+    "@cap.js/widget": "0.1.57",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "10.1.0",

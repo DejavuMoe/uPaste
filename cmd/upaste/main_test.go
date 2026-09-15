@@ -18,7 +18,7 @@ import (
 
 func TestHealthz(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	newHandler(nil, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	newHandler(nil, nil, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
@@ -33,7 +33,7 @@ func TestHealthz(t *testing.T) {
 
 func TestApplicationHandlerDoesNotExposeFileRoutes(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	newHandler(nil, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/f/AAAAAAAAAAAAAAAAAAAAAA", nil))
+	newHandler(nil, nil, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/f/AAAAAAAAAAAAAAAAAAAAAA", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", recorder.Code)
 	}
@@ -41,7 +41,7 @@ func TestApplicationHandlerDoesNotExposeFileRoutes(t *testing.T) {
 
 func TestHealthzRejectsOtherMethods(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	newHandler(nil, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/healthz", nil))
+	newHandler(nil, nil, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/healthz", nil))
 
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
@@ -67,7 +67,7 @@ func TestApplicationRoutingPrecedence(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 		_, _ = io.WriteString(w, apiMarker)
 	})
-	handler := newHandler(api, frontend)
+	handler := newHandler(api, nil, frontend)
 
 	tests := []struct {
 		name        string
@@ -113,7 +113,7 @@ func TestNilFrontendKeepsDevelopmentShape(t *testing.T) {
 	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	})
-	handler := newHandler(api, nil)
+	handler := newHandler(api, nil, nil)
 	for _, path := range []string{"/", "/s/AAAAAAAAAAAAAAAAAAAAAA", "/manage/AAAAAAAAAAAAAAAAAAAAAA", "/assets/index-test123.js", "/does-not-exist"} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
@@ -166,5 +166,27 @@ func TestVersionFlagRejectsCombinedAndUnknownFlags(t *testing.T) {
 				t.Fatalf("data directory %q was created by invalid flags", dataDir)
 			}
 		})
+	}
+}
+
+func TestAdminRoutingIsOptional(t *testing.T) {
+	adminMarker := "admin-handler"
+	adminHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = io.WriteString(w, adminMarker)
+	})
+	frontend := newTestFrontend(t)
+	handler := newHandler(nil, adminHandler, frontend)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/admin/summary", nil))
+	if recorder.Code != http.StatusTeapot || !strings.Contains(recorder.Body.String(), adminMarker) {
+		t.Fatalf("admin route status/body = %d/%s", recorder.Code, recorder.Body.String())
+	}
+
+	disabled := newHandler(nil, nil, frontend)
+	recorder = httptest.NewRecorder()
+	disabled.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/admin/summary", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("disabled admin route status = %d, want 404", recorder.Code)
 	}
 }

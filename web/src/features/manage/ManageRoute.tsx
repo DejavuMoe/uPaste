@@ -7,6 +7,7 @@ import { useOwnerCapabilities } from '../../app/ownerCapabilities';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { useDocumentTitle } from '../../app/useDocumentTitle';
+import { useDeploymentConfig } from '../../app/config';
 import { formatFileSize } from '../share/viewerHelpers';
 
 const maxBytes = 1_048_576;
@@ -26,6 +27,9 @@ export const ManageRoute: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation(); const navigate = useNavigate();
   const { get, remember, forget } = useOwnerCapabilities();
+  const { config } = useDeploymentConfig();
+  const publicMode = config.deployment_mode === 'public';
+  const maxRetentionSeconds = config.retention?.max_seconds;
   const [share, setShare] = useState<ShareMetadata | null>(null);
   const [terminal, setTerminal] = useState<'loading' | 'ready' | 'not_found' | 'expired' | 'server_error' | 'deleted'>('loading');
   const [tokenInput, setTokenInput] = useState(''); const [reveal, setReveal] = useState(false);
@@ -72,7 +76,11 @@ export const ManageRoute: React.FC = () => {
     return () => controller.abort();
   }, [id, location.hash]);
 
-  const expiryInvalid = expiryMode === 'custom' && (!customExpiry || !expiry || new Date(expiry).getTime() <= Date.now());
+  const shareCreatedMs = share?.created_at ? Date.parse(share.created_at) : undefined;
+  const retentionHorizonMs = publicMode && shareCreatedMs !== undefined && !Number.isNaN(shareCreatedMs) && maxRetentionSeconds ? shareCreatedMs + maxRetentionSeconds * 1000 : undefined;
+  const presetSeconds: Record<string, number | undefined> = { '1h': 3600, '1d': 86400, '7d': 604800, '30d': 2592000 };
+  const publicPresetExceeds = publicMode && retentionHorizonMs !== undefined && presetSeconds[expiryMode] !== undefined && Date.now() + presetSeconds[expiryMode]! * 1000 > retentionHorizonMs;
+  const expiryInvalid = (expiryMode === 'custom' && (!customExpiry || !expiry || new Date(expiry).getTime() <= Date.now())) || (publicMode && expiryMode === 'never') || publicPresetExceeds || (publicMode && expiryMode === 'custom' && !!expiry && retentionHorizonMs !== undefined && new Date(expiry).getTime() > retentionHorizonMs);
   const setExpiration = (value: string) => {
     setExpiryDirty(true); setExpiryMode(value as typeof expiryMode);
     if (value === 'never') { setExpiry(null); setCustomExpiry(''); return; }
@@ -123,7 +131,7 @@ export const ManageRoute: React.FC = () => {
     {share.payload_kind === 'FILE' && <dl><dt>Filename</dt><dd>{share.file!.filename}</dd><dt>Size</dt><dd>{formatFileSize(share.file!.size)}</dd><dt>Media type</dt><dd>{share.file!.media_type}</dd></dl>}
     {share.payload_kind === 'TEXT' && !textEditable && <p>{location.hash ? 'Unable to decrypt this share. Expiration and deletion remain available with the management token.' : 'Content editing is unavailable without the decryption key. You can still change expiration or delete this share.'}</p>}
     {textEditable && <><label>Format<select value={format} onChange={(event) => setFormat(event.target.value as TextFormat)}><option value="PLAIN">Plain text</option><option value="SOURCE">Source</option><option value="MARKDOWN">Markdown</option></select></label><label>Editor<textarea className={format === 'SOURCE' ? 'font-mono' : ''} value={content} onChange={(event) => setContent(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void save(); } }} /></label><small>{bytes(content)} / {maxBytes} B</small></>}
-    <label>Expires<select aria-label="Expiration" value={expiryMode} onChange={(event) => setExpiration(event.target.value)}><option value="never">Never</option><option value="1h">1 hour</option><option value="1d">1 day</option><option value="7d">7 days</option><option value="30d">30 days</option><option value="custom">Custom…</option></select></label>{expiryMode === 'custom' && <><input aria-label="Custom expiration date and time" type="datetime-local" value={customExpiry} onChange={(event) => setCustomExpiration(event.target.value)} />{expiryInvalid && <p role="alert">{customExpiry ? 'Expiration date must be in the future.' : 'Select an expiration date and time.'}</p>}</>}
+    <label>Expires<select aria-label="Expiration" value={expiryMode} onChange={(event) => setExpiration(event.target.value)}>{!publicMode && <option value="never">Never</option>}<option value="1h">1 hour</option><option value="1d">1 day</option><option value="7d">7 days</option>{!publicMode && <option value="30d">30 days</option>}<option value="custom">Custom…</option></select></label>{expiryMode === 'custom' && <><input aria-label="Custom expiration date and time" type="datetime-local" value={customExpiry} onChange={(event) => setCustomExpiration(event.target.value)} />{expiryInvalid && <p role="alert">{customExpiry ? 'Expiration date must be in the future.' : 'Select an expiration date and time.'}</p>}</>}
     <div className="viewer-actions"><Button onClick={() => void save()} disabled={!dirty || submitting || expiryInvalid || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))}>{submitting ? 'Saving…' : textEditable ? 'Save changes' : 'Update expiration'}</Button><Button variant="secondary" onClick={cancel}>Cancel</Button><Button variant="danger" onClick={() => setDeleteOpen(true)}>Delete share</Button></div>
   </section>{deleteOpen && <Dialog title="Delete this share?" onClose={() => !submitting && setDeleteOpen(false)}><p>This permanently deletes the share and its content. This action cannot be undone.</p><Button variant="secondary" disabled={submitting} onClick={() => setDeleteOpen(false)}>Cancel</Button><Button variant="danger" disabled={submitting} onClick={() => void remove()}>{submitting ? 'Deleting…' : 'Delete permanently'}</Button></Dialog>}{blocker.state === 'blocked' && <Dialog title="You have unsaved changes." onClose={() => blocker.reset?.()}><p>Are you sure you want to discard your draft?</p><Button variant="secondary" onClick={() => blocker.reset?.()}>Keep editing</Button><Button variant="danger" onClick={() => blocker.proceed?.()}>Discard and leave</Button></Dialog>}</main>;
 };

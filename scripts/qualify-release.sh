@@ -40,8 +40,6 @@ trap cleanup EXIT INT TERM
 
 fail() { release_die "$*"; }
 
-pick_base_port() { echo $(( (RANDOM % 2000) + 46000 )); }
-
 wait_health() {
   local app_port="$1"
   for _ in $(seq 1 100); do
@@ -99,7 +97,7 @@ echo "== go test -race ./... =="
 go test -race ./...
 
 echo "== repeated race-sensitive package stress =="
-go test -race -count=3 ./internal/share ./internal/database ./internal/maintenance ./internal/abuse
+go test -race -count=3 ./internal/share ./internal/database ./internal/maintenance ./internal/abuse ./internal/admin ./internal/adminapi ./internal/challenge
 go test -race -count=3 ./internal/httpapi ./internal/fileapi ./internal/objectstore
 
 echo "== deployment and systemd validation =="
@@ -116,9 +114,7 @@ binary="$work/upaste-${version}-linux-amd64/upaste"
 echo "== automated cold backup and restore proof =="
 backup_data="$work/backup-original"
 mkdir -p "$backup_data"
-base=$(pick_base_port)
-app_port=$base
-file_port=$((base + 1))
+read -r app_port file_port < <(release_pick_ports)
 
 start_server "$backup_data" "$app_port" "$file_port" "$work/backup-server.log"
 text_json=$(create_text "$app_port" "phase10 backup text")
@@ -161,9 +157,7 @@ stop_server
 echo "== shutdown under active upload =="
 shutdown_data="$work/shutdown-data"
 mkdir -p "$shutdown_data"
-base=$(pick_base_port)
-app_port=$base
-file_port=$((base + 1))
+read -r app_port file_port < <(release_pick_ports)
 start_server "$shutdown_data" "$app_port" "$file_port" "$work/shutdown-server.log"
 shutdown_text=$(create_text "$app_port" "phase10 shutdown text")
 shutdown_text_id=$(json_field '["share"]["id"]' <<<"$shutdown_text")
@@ -206,9 +200,7 @@ install -m 0755 "$binary" "$permission_root/usr/local/bin/upaste"
 printf 'UPASTE_ADDR=127.0.0.1:8080\nUPASTE_FILE_ADDR=127.0.0.1:8081\nUPASTE_DATA_DIR=%s\n' "$permission_root/var/lib/upaste" > "$permission_root/etc/upaste/upaste.env"
 chmod 0555 "$permission_root" "$permission_root/usr/local/bin" "$permission_root/etc/upaste"
 chmod 0700 "$permission_root/var/lib/upaste"
-base=$(pick_base_port)
-app_port=$base
-file_port=$((base + 1))
+read -r app_port file_port < <(release_pick_ports)
 pushd "$permission_root" >/dev/null
 UPASTE_ADDR="127.0.0.1:$app_port" \
 UPASTE_FILE_ADDR="127.0.0.1:$file_port" \

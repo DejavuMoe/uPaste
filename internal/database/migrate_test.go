@@ -50,7 +50,7 @@ func TestMigrateRejectsNewerSchema(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
-	if _, err := db.Exec("PRAGMA user_version = 5"); err != nil {
+	if _, err := db.Exec("PRAGMA user_version = 6"); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -62,7 +62,7 @@ func TestMigrateRejectsNewerSchema(t *testing.T) {
 	}
 }
 
-func TestMigrateVersionOneToFour(t *testing.T) {
+func TestMigrateVersionOneToCurrent(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
@@ -90,7 +90,7 @@ func TestMigrateVersionOneToFour(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	assertSchemaVersion(t, db, 4)
+	assertSchemaVersion(t, db, latestSchemaVersion)
 	assertSchemaObject(t, db, "table", "standard_text_payloads")
 	assertSchemaObject(t, db, "table", "encrypted_text_payloads")
 	assertSchemaObject(t, db, "table", "file_payloads")
@@ -109,7 +109,7 @@ func TestMigrateVersionOneToFour(t *testing.T) {
 	}
 }
 
-func TestMigrateVersionTwoToFourPreservesStandardText(t *testing.T) {
+func TestMigrateVersionTwoToCurrentPreservesStandardText(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
@@ -142,7 +142,7 @@ func TestMigrateVersionTwoToFourPreservesStandardText(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	assertSchemaVersion(t, db, 4)
+	assertSchemaVersion(t, db, latestSchemaVersion)
 	var format, stored string
 	if err := db.QueryRow("SELECT format, content FROM standard_text_payloads WHERE share_id = ?", id).Scan(&format, &stored); err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestMigrateVersionTwoToFourPreservesStandardText(t *testing.T) {
 	}
 }
 
-func TestMigrateVersionThreeToFourPreservesTextPayloads(t *testing.T) {
+func TestMigrateVersionThreeToCurrentPreservesTextPayloads(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
 	db := openRaw(t, path)
@@ -189,7 +189,7 @@ func TestMigrateVersionThreeToFourPreservesTextPayloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	assertSchemaVersion(t, db, 4)
+	assertSchemaVersion(t, db, latestSchemaVersion)
 	var content string
 	var nonce, ciphertext []byte
 	if err := db.QueryRow("SELECT content FROM standard_text_payloads WHERE share_id = ?", strings.Repeat("C", 22)).Scan(&content); err != nil || content != "standard" {
