@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError, deleteShare, getShare, updateShare } from '../../app/api';
 import type { ShareMetadata, TextFormat } from '../../app/types';
@@ -31,7 +31,7 @@ export const ManageRoute: React.FC = () => {
   const [tokenInput, setTokenInput] = useState(''); const [reveal, setReveal] = useState(false);
   const [format, setFormat] = useState<TextFormat>('PLAIN'); const [content, setContent] = useState('');
   const [baseline, setBaseline] = useState({ format: 'PLAIN' as TextFormat, content: '' });
-  const [expiry, setExpiry] = useState<string | null>(null); const [expiryDirty, setExpiryDirty] = useState(false);
+  const [expiry, setExpiry] = useState<string | null | undefined>(null); const [expiryMode, setExpiryMode] = useState<'never' | '1h' | '1d' | '7d' | '30d' | 'custom'>('never'); const [expiryDirty, setExpiryDirty] = useState(false);
   const [customExpiry, setCustomExpiry] = useState(''); const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(''); const [deleteOpen, setDeleteOpen] = useState(false);
   const [decryptAvailable, setDecryptAvailable] = useState(false);
@@ -53,14 +53,14 @@ export const ManageRoute: React.FC = () => {
     const controller = new AbortController(); setTerminal('loading');
     getShare(id, controller.signal).then(async ({ share: loaded }) => {
       if (!validPayload(loaded)) { setTerminal('server_error'); return; }
-      setShare(loaded); setExpiry(loaded.expires_at); setCustomExpiry(loaded.expires_at ? localDate(loaded.expires_at) : ''); setExpiryDirty(false);
+      setShare(loaded); setExpiry(loaded.expires_at); setExpiryMode(loaded.expires_at ? 'custom' : 'never'); setCustomExpiry(loaded.expires_at ? localDate(loaded.expires_at) : ''); setExpiryDirty(false);
       if (loaded.payload_kind === 'TEXT' && loaded.privacy_mode === 'STANDARD') {
         const text = loaded.text!; setFormat(text.format); setContent(text.content); setBaseline(text); setDecryptAvailable(true);
       } else if (loaded.payload_kind === 'TEXT') {
         const fragment = window.location.hash || location.hash;
-        if (!fragment || fragment === '#') { setDecryptAvailable(false); return; }
+        if (!fragment || fragment === '#') { setDecryptAvailable(false); setTerminal('ready'); return; }
         try { const text = await decryptWithFragment(fragment, loaded.encrypted_text as EncryptedPayloadV1); setFormat(text.format); setContent(text.content); setBaseline(text); setDecryptAvailable(true); }
-        catch { setDecryptAvailable(false); }
+        catch { setDecryptAvailable(false); setTerminal('ready'); }
       } else setDecryptAvailable(false);
       setTerminal('ready');
     }).catch((error) => {
@@ -71,13 +71,14 @@ export const ManageRoute: React.FC = () => {
     return () => controller.abort();
   }, [id, location.hash]);
 
-  const expiryValue = useMemo(() => expiry === null ? 'never' : 'custom', [expiry]);
-  const expiryInvalid = expiryValue === 'custom' && (!customExpiry || !expiry || new Date(expiry).getTime() <= Date.now());
+  const expiryInvalid = expiryMode === 'custom' && (!customExpiry || !expiry || new Date(expiry).getTime() <= Date.now());
   const setExpiration = (value: string) => {
-    setExpiryDirty(true);
-    if (value === 'never') { setExpiry(null); setCustomExpiry(''); }
-    else { setCustomExpiry(value); const parsed = new Date(value); setExpiry(Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()); }
+    setExpiryDirty(true); setExpiryMode(value as typeof expiryMode);
+    if (value === 'never') { setExpiry(null); setCustomExpiry(''); return; }
+    if (value !== 'custom') { const hours = value === '1h' ? 1 : value === '1d' ? 24 : value === '7d' ? 168 : 720; setExpiry(new Date(Date.now() + hours * 3600000).toISOString()); return; }
+    setCustomExpiry(''); setExpiry(undefined);
   };
+  const setCustomExpiration = (value: string) => { setExpiryDirty(true); setCustomExpiry(value); const parsed = new Date(value); setExpiry(value && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : undefined); };
   const handleError = (error: unknown) => {
     if (!(error instanceof ApiError)) { setMessage('Could not save changes.'); return; }
     if (error.status === 401 && id) { forget(id); setMessage('Management token was not accepted. Enter it again.'); return; }
@@ -88,18 +89,19 @@ export const ManageRoute: React.FC = () => {
   const save = async () => {
     if (!id || !token || !share || !dirty || submitting || expiryInvalid || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))) return;
     const patch: Parameters<typeof updateShare>[2] = {};
-    if (contentDirty) {
-      if (share.privacy_mode === 'ENCRYPTED') patch.encrypted_text = await encryptWithFragment(window.location.hash || location.hash, format, content);
-      else patch.text = { format, content };
-    }
-    if (expiryDirty) patch.expires_at = expiry;
     setSubmitting(true); setMessage('');
-    try { const result = await updateShare(id, token, patch); setShare(result.share); setBaseline({ format, content }); setExpiry(result.share.expires_at); setExpiryDirty(false); setMessage('Changes saved'); }
+    try {
+      if (contentDirty) {
+        if (share.privacy_mode === 'ENCRYPTED') patch.encrypted_text = await encryptWithFragment(window.location.hash || location.hash, format, content);
+        else patch.text = { format, content };
+      }
+      if (expiryDirty) patch.expires_at = expiry!;
+      const result = await updateShare(id, token, patch); setShare(result.share); setBaseline({ format, content }); setExpiry(result.share.expires_at); setExpiryMode(result.share.expires_at ? 'custom' : 'never'); setCustomExpiry(result.share.expires_at ? localDate(result.share.expires_at) : ''); setExpiryDirty(false); setMessage('Changes saved'); }
     catch (error) { handleError(error); } finally { setSubmitting(false); }
   };
   const remove = async () => {
     if (!id || !token || submitting) return; setSubmitting(true);
-    try { await deleteShare(id, token); forget(id); setShare(null); setContent(''); setTokenInput(''); setDeleteOpen(false); setTerminal('deleted'); navigate(`/manage/${id}`, { replace: true }); }
+    try { await deleteShare(id, token); forget(id); setShare(null); setContent(''); setBaseline({ format: 'PLAIN', content: '' }); setExpiryDirty(false); setTokenInput(''); setDeleteOpen(false); setTerminal('deleted'); navigate(`/manage/${id}`, { replace: true }); }
     catch (error) { setDeleteOpen(false); handleError(error); } finally { setSubmitting(false); }
   };
   const cancel = () => navigate(`/s/${id}${location.hash}`);
@@ -113,7 +115,7 @@ export const ManageRoute: React.FC = () => {
     {share.payload_kind === 'FILE' && <dl><dt>Filename</dt><dd>{share.file!.filename}</dd><dt>Size</dt><dd>{formatFileSize(share.file!.size)}</dd><dt>Media type</dt><dd>{share.file!.media_type}</dd></dl>}
     {share.payload_kind === 'TEXT' && !textEditable && <p>{location.hash ? 'Unable to decrypt this share. Expiration and deletion remain available with the management token.' : 'Content editing is unavailable without the decryption key. You can still change expiration or delete this share.'}</p>}
     {textEditable && <><label>Format<select value={format} onChange={(event) => setFormat(event.target.value as TextFormat)}><option value="PLAIN">Plain text</option><option value="SOURCE">Source</option><option value="MARKDOWN">Markdown</option></select></label><label>Editor<textarea className={format === 'SOURCE' ? 'font-mono' : ''} value={content} onChange={(event) => setContent(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void save(); } }} /></label><small>{bytes(content)} / {maxBytes} B</small></>}
-    <label>Expires<select aria-label="Expiration" value={expiryValue} onChange={(event) => { if (event.target.value === 'never') setExpiration('never'); else if (!customExpiry) setExpiration(localDate(new Date(Date.now() + 86400000).toISOString())); }}><option value="never">Never</option><option value="custom">Custom…</option></select></label>{expiryValue === 'custom' && <><input aria-label="Custom expiration date and time" type="datetime-local" value={customExpiry} onChange={(event) => setExpiration(event.target.value)} />{expiryInvalid && <p role="alert">Expiration date must be in the future.</p>}</>}
+    <label>Expires<select aria-label="Expiration" value={expiryMode} onChange={(event) => setExpiration(event.target.value)}><option value="never">Never</option><option value="1h">1 hour</option><option value="1d">1 day</option><option value="7d">7 days</option><option value="30d">30 days</option><option value="custom">Custom…</option></select></label>{expiryMode === 'custom' && <><input aria-label="Custom expiration date and time" type="datetime-local" value={customExpiry} onChange={(event) => setCustomExpiration(event.target.value)} />{expiryInvalid && <p role="alert">{customExpiry ? 'Expiration date must be in the future.' : 'Select an expiration date and time.'}</p>}</>}
     <div className="viewer-actions"><Button onClick={() => void save()} disabled={!dirty || submitting || expiryInvalid || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))}>{submitting ? 'Saving…' : textEditable ? 'Save changes' : 'Update expiration'}</Button><Button variant="secondary" onClick={cancel}>Cancel</Button><Button variant="danger" onClick={() => setDeleteOpen(true)}>Delete share</Button></div>
   </section>{deleteOpen && <Dialog title="Delete this share?" onClose={() => !submitting && setDeleteOpen(false)}><p>This permanently deletes the share and its content. This action cannot be undone.</p><Button variant="secondary" disabled={submitting} onClick={() => setDeleteOpen(false)}>Cancel</Button><Button variant="danger" disabled={submitting} onClick={() => void remove()}>{submitting ? 'Deleting…' : 'Delete permanently'}</Button></Dialog>}{blocker.state === 'blocked' && <Dialog title="You have unsaved changes." onClose={() => blocker.reset?.()}><p>Are you sure you want to discard your draft?</p><Button variant="secondary" onClick={() => blocker.reset?.()}>Keep editing</Button><Button variant="danger" onClick={() => blocker.proceed?.()}>Discard and leave</Button></Dialog>}</main>;
 };
