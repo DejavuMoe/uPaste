@@ -106,8 +106,8 @@ export function listAdminShares(params: AdminListParams): Promise<{ shares: Admi
   return request<{ shares: AdminListItem[]; next_cursor: string }>(`/api/v1/admin/shares${suffix ? `?${suffix}` : ''}`);
 }
 
-export function getAdminShare(id: string): Promise<{ share: AdminShareDetail }> {
-  return request<{ share: AdminShareDetail }>(`/api/v1/admin/shares/${encodeURIComponent(id)}`);
+export function getAdminShare(id: string, signal?: AbortSignal): Promise<{ share: AdminShareDetail }> {
+  return request<{ share: AdminShareDetail }>(`/api/v1/admin/shares/${encodeURIComponent(id)}`, { signal });
 }
 
 export function deleteAdminShare(id: string, csrf: string): Promise<void> {

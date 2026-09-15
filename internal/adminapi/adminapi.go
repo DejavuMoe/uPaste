@@ -394,6 +394,7 @@ type adminShareResponse struct {
 	CreatedAt     string              `json:"created_at"`
 	UpdatedAt     string              `json:"updated_at"`
 	ExpiresAt     *string             `json:"expires_at"`
+	PayloadBytes  int64               `json:"payload_bytes"`
 	Text          *adminTextView      `json:"text,omitempty"`
 	EncryptedText *adminEncryptedView `json:"encrypted_text,omitempty"`
 	File          *adminFileView      `json:"file,omitempty"`
@@ -436,6 +437,14 @@ func (api *API) responseFromShare(value share.Share) adminShareResponse {
 	if value.ExpiresAt != nil {
 		formatted := value.ExpiresAt.UTC().Format(time.RFC3339Nano)
 		response.ExpiresAt = &formatted
+	}
+	switch {
+	case value.Text != nil:
+		response.PayloadBytes = int64(len(value.Text.Content))
+	case value.EncryptedText != nil:
+		response.PayloadBytes = int64(len(value.EncryptedText.Ciphertext))
+	case value.File != nil:
+		response.PayloadBytes = value.File.Size
 	}
 	if value.Text != nil {
 		response.Text = &adminTextView{Format: value.Text.Format, Content: value.Text.Content}

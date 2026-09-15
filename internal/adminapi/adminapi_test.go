@@ -349,3 +349,69 @@ func TestAdminListIsMetadataOnlyWithLargePayloads(t *testing.T) {
 		t.Fatal("exact metadata list leaked encrypted payload data")
 	}
 }
+
+func TestAdminDetailPayloadBytesContract(t *testing.T) {
+	env := newEnv(t)
+	ctx := context.Background()
+	// len on a Go string is canonical UTF-8 byte length, including multibyte runes.
+	textContent := "téxt-☃-" + strings.Repeat("t", 12345)
+	text, _, err := env.service.Create(ctx, share.CreateInput{Text: share.Text{Format: domain.TextPlain, Content: textContent}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptedBytes := make([]byte, 3456)
+	encrypted, _, err := env.service.CreateEncrypted(ctx, share.EncryptedCreateInput{EncryptedText: share.EncryptedText{
+		Protocol: share.EncryptedTextProtocolV1, Nonce: make([]byte, 12), Ciphertext: encryptedBytes,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileBytes := strings.Repeat("f", 6789)
+	staged, err := env.service.StageFile(ctx, strings.NewReader(fileBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, _, err := env.service.CreateFile(ctx, "detail.bin", staged, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie, _ := env.login()
+
+	for _, test := range []struct {
+		name string
+		id   string
+		want int64
+	}{
+		{"standard text", text.ID.String(), int64(len(textContent))},
+		{"encrypted text", encrypted.ID.String(), int64(len(encryptedBytes))},
+		{"file", file.ID.String(), int64(len(fileBytes))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := env.request(http.MethodGet, "/api/v1/admin/shares/"+test.id, cookie, "", "")
+			if response.Code != http.StatusOK {
+				t.Fatalf("detail status = %d; body=%s", response.Code, response.Body.String())
+			}
+			var body struct {
+				Share struct {
+					PayloadBytes int64 `json:"payload_bytes"`
+				} `json:"share"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Share.PayloadBytes != test.want {
+				t.Fatalf("payload_bytes = %d, want %d", body.Share.PayloadBytes, test.want)
+			}
+		})
+	}
+
+	// Encrypted detail still withholds ciphertext bytes, plaintext, and keys.
+	encryptedDetail := env.request(http.MethodGet, "/api/v1/admin/shares/"+encrypted.ID.String(), cookie, "", "")
+	raw := encryptedDetail.Body.String()
+	if strings.Contains(raw, base64.RawURLEncoding.EncodeToString(encryptedBytes)) || strings.Contains(raw, `"ciphertext":`) {
+		t.Fatal("encrypted admin detail exposed ciphertext bytes")
+	}
+	if !strings.Contains(raw, "plaintext unavailable") {
+		t.Fatal("encrypted admin detail missing plaintext-unavailable notice")
+	}
+}
