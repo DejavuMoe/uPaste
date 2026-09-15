@@ -95,3 +95,51 @@ func TestAdminTokenValidation(t *testing.T) {
 		t.Fatal("weak admin token accepted")
 	}
 }
+
+func TestAdminCookieSecureInvariant(t *testing.T) {
+	token, err := admin.GenerateToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenValue := token.Reveal()
+	basePublic := map[string]string{
+		"UPASTE_DEPLOYMENT_MODE":    "public",
+		"UPASTE_CHALLENGE_PROVIDER": "cap",
+		"UPASTE_CAP_ENDPOINT":       "https://cap.example.com",
+		"UPASTE_CAP_SITE_KEY":       "site",
+		"UPASTE_CAP_SECRET_KEY":     "secret",
+		"UPASTE_ADMIN_TOKEN":        tokenValue,
+	}
+
+	config, err := Parse(nil, envMap(basePublic))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.AdminCookieSecure {
+		t.Fatal("public mode did not force Secure admin cookie")
+	}
+
+	downgraded := map[string]string{}
+	for key, value := range basePublic {
+		downgraded[key] = value
+	}
+	downgraded["UPASTE_ADMIN_COOKIE_SECURE"] = "false"
+	if _, err := Parse(nil, envMap(downgraded)); err == nil {
+		t.Fatal("public mode accepted an insecure admin cookie downgrade")
+	}
+
+	private, err := Parse(nil, envMap(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if private.AdminCookieSecure {
+		t.Fatal("private mode default should not force Secure cookie")
+	}
+	privateSecure, err := Parse(nil, envMap(map[string]string{"UPASTE_ADMIN_COOKIE_SECURE": "true"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !privateSecure.AdminCookieSecure {
+		t.Fatal("private mode explicit Secure cookie was not honored")
+	}
+}

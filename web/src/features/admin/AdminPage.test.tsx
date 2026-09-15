@@ -43,6 +43,7 @@ describe('AdminPage', () => {
     mockApi.loginAdmin.mockReset();
     mockApi.getAdminSummary.mockReset();
     mockApi.listAdminShares.mockReset();
+    mockApi.getAdminShare.mockReset();
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ deployment_mode: 'public', admin_enabled: true, retention: { default_seconds: 86400, max_seconds: 604800 }, challenge: { provider: 'cap', site_key: 'site', api_endpoint: 'https://cap.example.com' } }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     ) as any;
@@ -57,11 +58,29 @@ describe('AdminPage', () => {
     expect(screen.getByRole('heading', { name: 'Administration unavailable' })).toBeInTheDocument();
   });
 
+  it('loads Share detail on demand when Inspect is clicked', async () => {
+    mockApi.getAdminSession.mockResolvedValue(null);
+    mockApi.loginAdmin.mockResolvedValue({ csrf: 'csrf-1' });
+    mockApi.getAdminSummary.mockResolvedValue({ summary: { active: 1, expired: 0, text: 1, file: 0, encrypted: 0, file_bytes: 0 } });
+    mockApi.listAdminShares.mockResolvedValue({ shares: [{ id: 'BBBBBBBBBBBBBBBBBBBBBB', payload_kind: 'TEXT', privacy_mode: 'STANDARD', state: 'active', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', expires_at: null, payload_bytes: 12 }], next_cursor: '' });
+    mockApi.getAdminShare.mockResolvedValue({ share: { id: 'BBBBBBBBBBBBBBBBBBBBBB', payload_kind: 'TEXT', privacy_mode: 'STANDARD', state: 'active', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', expires_at: null, payload_bytes: 12, text: { format: 'PLAIN', content: 'fetched on demand' } } });
+
+    const user = userEvent.setup();
+    renderAdmin();
+    await user.type(await screen.findByLabelText('Admin token'), 'up_a1_test');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(screen.getByText('BBBBBBBBBBBBBBBBBBBBBB')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Inspect' }));
+    await waitFor(() => expect(mockApi.getAdminShare).toHaveBeenCalledWith('BBBBBBBBBBBBBBBBBBBBBB'));
+    await waitFor(() => expect(screen.getByText('fetched on demand')).toBeInTheDocument());
+  });
+
   it('authenticates, lists Shares, and logs out', async () => {
     mockApi.getAdminSession.mockResolvedValue(null);
     mockApi.loginAdmin.mockResolvedValue({ csrf: 'csrf-1' });
     mockApi.getAdminSummary.mockResolvedValue({ summary: { active: 1, expired: 0, text: 1, file: 0, encrypted: 0, file_bytes: 0 } });
-    mockApi.listAdminShares.mockResolvedValue({ shares: [{ id: 'AAAAAAAAAAAAAAAAAAAAAA', payload_kind: 'TEXT', privacy_mode: 'STANDARD', state: 'active', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', expires_at: null, text: { format: 'PLAIN', content: 'governed text' } }], next_cursor: '' });
+    mockApi.listAdminShares.mockResolvedValue({ shares: [{ id: 'AAAAAAAAAAAAAAAAAAAAAA', payload_kind: 'TEXT', privacy_mode: 'STANDARD', state: 'active', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', expires_at: null, payload_bytes: 14 }], next_cursor: '' });
     mockApi.logoutAdmin.mockResolvedValue(undefined);
 
     const user = userEvent.setup();

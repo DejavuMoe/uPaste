@@ -103,6 +103,15 @@ func (control *Control) sweep(now time.Time) {
 	control.lastSweep = now
 }
 
+// ClientIP resolves the effective client identity using the same trusted-proxy
+// rules as rate limiting. An invalid peer resolves to the zero address.
+func (control *Control) ClientIP(request *http.Request) netip.Addr {
+	if control == nil {
+		return netip.Addr{}
+	}
+	return ClientIP(request.RemoteAddr, request.Header.Get("X-Forwarded-For"), control.trusted)
+}
+
 func (control *Control) TryUpload() bool {
 	if control.disabled {
 		return true

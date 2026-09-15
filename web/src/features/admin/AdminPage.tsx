@@ -7,11 +7,13 @@ import {
   cleanupAdminExpired,
   deleteAdminShare,
   getAdminSession,
+  getAdminShare,
   getAdminSummary,
   listAdminShares,
   loginAdmin,
   logoutAdmin,
-  type AdminShareView,
+  type AdminListItem,
+  type AdminShareDetail,
   type AdminSummary,
 } from '../../app/adminApi';
 import { Button } from '../../components/Button';
@@ -26,7 +28,7 @@ export const AdminPage: React.FC = () => {
   const [tokenInput, setTokenInput] = useState('');
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<AdminSummary | null>(null);
-  const [shares, setShares] = useState<AdminShareView[]>([]);
+  const [shares, setShares] = useState<AdminListItem[]>([]);
   const [nextCursor, setNextCursor] = useState('');
   const [kind, setKind] = useState('');
   const [privacy, setPrivacy] = useState('');
@@ -34,8 +36,10 @@ export const AdminPage: React.FC = () => {
   const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
   const [exactId, setExactId] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [detail, setDetail] = useState<AdminShareView | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AdminShareView | null>(null);
+  const [detail, setDetail] = useState<AdminShareDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<AdminListItem | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -152,6 +156,20 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const openDetail = async (id: string) => {
+    setDetail(null);
+    setDetailError('');
+    setDetailLoading(true);
+    try {
+      const result = await getAdminShare(id);
+      setDetail(result.share);
+    } catch (err) {
+      setDetailError(err instanceof AdminApiError ? err.message : 'Could not load Share detail.');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const summaryLine = useMemo(() => {
     if (!summary) return '';
     return `Stored files: ${formatFileSize(summary.file_bytes)} · active ${summary.active} · expired ${summary.expired} · text ${summary.text} · file ${summary.file} · encrypted ${summary.encrypted}`;
@@ -241,8 +259,8 @@ export const AdminPage: React.FC = () => {
                   <td>{new Date(share.created_at).toLocaleString()}</td>
                   <td>{share.expires_at ? new Date(share.expires_at).toLocaleString() : 'Never'}</td>
                   <td>{share.state}</td>
-                  <td>{share.file ? formatFileSize(share.file.size) : share.encrypted_text ? `${share.encrypted_text.ciphertext_bytes} B` : '—'}</td>
-                  <td><Button variant="secondary" onClick={() => setDetail(share)}>Inspect</Button></td>
+                  <td>{formatFileSize(share.payload_bytes)}</td>
+                  <td><Button variant="secondary" onClick={() => void openDetail(share.id)}>Inspect</Button></td>
                 </tr>
               ))}
             </tbody>
@@ -253,42 +271,49 @@ export const AdminPage: React.FC = () => {
         </div>
       </section>
 
-      {detail && (
-        <Dialog title="Share detail" onClose={() => setDetail(null)}>
-          <dl className="admin-detail">
-            <dt>ID</dt><dd className="font-mono">{detail.id}</dd>
-            <dt>Type</dt><dd>{detail.payload_kind}</dd>
-            <dt>Privacy</dt><dd>{detail.privacy_mode}</dd>
-            <dt>Created</dt><dd>{new Date(detail.created_at).toLocaleString()}</dd>
-            <dt>Expires</dt><dd>{detail.expires_at ? new Date(detail.expires_at).toLocaleString() : 'Never'}</dd>
-          </dl>
-          {detail.text && (
+      {(detailLoading || detailError || detail) && (
+        <Dialog title="Share detail" onClose={() => { setDetail(null); setDetailError(''); setDetailLoading(false); }}>
+          {detailLoading && <p role="status">Loading Share detail…</p>}
+          {detailError && <p role="alert">{detailError}</p>}
+          {detail && (
             <>
-              <h3>Standard text ({detail.text.format})</h3>
-              <pre className="admin-text-preview" tabIndex={0}>{detail.text.content}</pre>
-            </>
-          )}
-          {detail.encrypted_text && (
-            <div className="privacy-notice" role="note">
-              Client-side encrypted — plaintext unavailable to the server. Ciphertext size: {detail.encrypted_text.ciphertext_bytes} bytes.
-            </div>
-          )}
-          {detail.file && (
-            <>
-              <h3>File metadata</h3>
               <dl className="admin-detail">
-                <dt>Filename</dt><dd>{detail.file.filename}</dd>
-                <dt>Size</dt><dd>{formatFileSize(detail.file.size)}</dd>
-                <dt>Media type</dt><dd>{detail.file.media_type}</dd>
-                <dt>SHA-256</dt><dd className="font-mono">{detail.file.sha256}</dd>
+                <dt>ID</dt><dd className="font-mono">{detail.id}</dd>
+                <dt>Type</dt><dd>{detail.payload_kind}</dd>
+                <dt>Privacy</dt><dd>{detail.privacy_mode}</dd>
+                <dt>Created</dt><dd>{new Date(detail.created_at).toLocaleString()}</dd>
+                <dt>Expires</dt><dd>{detail.expires_at ? new Date(detail.expires_at).toLocaleString() : 'Never'}</dd>
+                <dt>Size</dt><dd>{formatFileSize(detail.payload_bytes)}</dd>
               </dl>
-              <a className="btn btn-secondary" href={detail.file.download_url} target="_blank" rel="noopener noreferrer">Download file</a>
+              {detail.text && (
+                <>
+                  <h3>Standard text ({detail.text.format})</h3>
+                  <pre className="admin-text-preview" tabIndex={0}>{detail.text.content}</pre>
+                </>
+              )}
+              {detail.encrypted_text && (
+                <div className="privacy-notice" role="note">
+                  Client-side encrypted — plaintext unavailable to the server. Ciphertext size: {detail.encrypted_text.ciphertext_bytes} bytes.
+                </div>
+              )}
+              {detail.file && (
+                <>
+                  <h3>File metadata</h3>
+                  <dl className="admin-detail">
+                    <dt>Filename</dt><dd>{detail.file.filename}</dd>
+                    <dt>Size</dt><dd>{formatFileSize(detail.file.size)}</dd>
+                    <dt>Media type</dt><dd>{detail.file.media_type}</dd>
+                    <dt>SHA-256</dt><dd className="font-mono">{detail.file.sha256}</dd>
+                  </dl>
+                  <a className="btn btn-secondary" href={detail.file.download_url} target="_blank" rel="noopener noreferrer">Download file</a>
+                </>
+              )}
+              <div className="viewer-actions">
+                <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
+                <Button variant="danger" onClick={() => setDeleteTarget(detail)}>Delete share</Button>
+              </div>
             </>
           )}
-          <div className="viewer-actions">
-            <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
-            <Button variant="danger" onClick={() => setDeleteTarget(detail)}>Delete share</Button>
-          </div>
         </Dialog>
       )}
 

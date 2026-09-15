@@ -204,14 +204,22 @@ UPASTE_ADMIN_TOKEN=up_a1_<generated>
 
 `/admin` and `/api/v1/admin/*` are 404 unless the token is configured. Admin
 sessions are in-memory, restart-invalidated, stored only as a SHA-256 verifier,
-and delivered as a host-only HttpOnly `SameSite=Strict` cookie (Secure in public
-mode). Destructive admin requests additionally require the session-bound
-`X-uPaste-CSRF` header. Admin cannot edit Share content, recover OwnerTokens, or
-decrypt encrypted Shares. A restart requires signing in again.
+and delivered as a host-only HttpOnly `SameSite=Strict` cookie. Public mode
+always forces `Secure=true`, and `UPASTE_ADMIN_COOKIE_SECURE=false` is rejected at
+startup in public mode. Private mode defaults to non-Secure for loopback
+development and may explicitly opt in to `Secure=true`.
+
+Destructive admin requests additionally require the session-bound
+`X-uPaste-CSRF` header. The admin listing is metadata-only (`payload_bytes` plus
+lightweight File metadata); clicking Inspect fetches
+`GET /api/v1/admin/shares/:id` on demand. Admin cannot edit Share content,
+recover OwnerTokens, or decrypt encrypted Shares. A restart requires signing in
+again.
 
 The embedded frontend applies provider-specific CSP automatically. Private mode
-keeps the strict baseline policy; Cap adds only its configured origin,
-`'wasm-unsafe-eval'`, a worker `blob:` allowance, and a per-response nonce;
+keeps the strict baseline policy; Cap adds its configured origin only to
+`connect-src`, plus `'wasm-unsafe-eval'`, a worker `blob:` allowance, and a
+per-response nonce;
 Turnstile adds only the canonical Cloudflare challenge origin. No mode uses
 `unsafe-inline`, `unsafe-eval`, or wildcard sources.
 

@@ -941,7 +941,7 @@ func (api *API) requireChallenge(w http.ResponseWriter, r *http.Request) bool {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), api.options.ChallengeTimeout)
 	defer cancel()
-	err := api.options.Challenge.Verify(ctx, values[0], remoteIP(r))
+	err := api.options.Challenge.Verify(ctx, values[0], api.challengeRemoteIP(r))
 	switch {
 	case err == nil:
 		return true
@@ -952,6 +952,18 @@ func (api *API) requireChallenge(w http.ResponseWriter, r *http.Request) bool {
 		api.writeError(w, http.StatusServiceUnavailable, "challenge_unavailable", "challenge provider unavailable")
 	}
 	return false
+}
+
+// challengeRemoteIP uses the same trusted-proxy client identity resolution as
+// abuse rate limiting and admin login, so Turnstile sees the safely resolved
+// client rather than the immediate proxy/loopback peer.
+func (api *API) challengeRemoteIP(r *http.Request) string {
+	if api.abuse != nil {
+		if address := api.abuse.ClientIP(r); address.IsValid() {
+			return address.String()
+		}
+	}
+	return remoteIP(r)
 }
 
 func remoteIP(r *http.Request) string {

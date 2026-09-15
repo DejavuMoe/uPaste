@@ -184,8 +184,9 @@ func (handler *Handler) contentSecurityPolicy(nonce string) string {
 		frame = append(frame, "https://challenges.cloudflare.com")
 		connect = append(connect, "https://challenges.cloudflare.com")
 	case "cap":
+		// The pinned widget and its WASM are bundled same-origin. The external
+		// Cap Standalone origin only carries challenge/redeem network traffic.
 		if handler.capOrigin != "" {
-			script = append(script, handler.capOrigin)
 			connect = append(connect, handler.capOrigin)
 		}
 		// The pinned Cap widget compiles fetched WASM and may create workers.

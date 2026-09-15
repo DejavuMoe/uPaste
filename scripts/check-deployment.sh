@@ -64,6 +64,7 @@ require_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=127\.0\.0\.1/32,::1/128
 forbid_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=.*0\.0\.0\.0/0'
 forbid_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=.*::/0'
 forbid_line "$env_example" '^UPASTE_ADMIN_TOKEN=up_a1_[A-Za-z0-9_-]{43}$'
+forbid_line "$env_example" '^UPASTE_ADMIN_COOKIE_SECURE=false$'
 
 # Nginx: two server names, two loopback upstreams, large body/timeouts, no CORS.
 require_line "$nginx" 'server_name paste\.example\.com;'

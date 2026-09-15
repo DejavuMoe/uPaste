@@ -138,7 +138,7 @@ Configuration precedence is CLI, then environment, then default:
 | Turnstile settings | `UPASTE_TURNSTILE_SITE_KEY`, `UPASTE_TURNSTILE_SECRET_KEY`, `UPASTE_TURNSTILE_HOSTNAME` | — | empty |
 | Challenge timeout | `UPASTE_CHALLENGE_TIMEOUT` | — | `10s` |
 | Superadmin token | `UPASTE_ADMIN_TOKEN` | — | empty (admin disabled) |
-| Admin cookie Secure | `UPASTE_ADMIN_COOKIE_SECURE` | — | true in public mode |
+| Admin cookie Secure | `UPASTE_ADMIN_COOKIE_SECURE` | — | public forces true; private defaults false |
 | Data directory | `UPASTE_DATA_DIR` | `-data-dir` | `./data` |
 
 The data directory is resolved to an absolute clean path. The application creates `<data-dir>/upaste.db` and `<data-dir>/objects/`; newly created directories/database/object modes are `0700`/`0600`. File and application addresses must differ. File origin must be an absolute HTTP(S) origin without path, query, fragment, or userinfo; it is never inferred from Host or forwarded headers. Existing operator-managed permissions are preserved. Examples:

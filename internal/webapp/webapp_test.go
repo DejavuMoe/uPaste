@@ -241,6 +241,10 @@ func TestProviderAwareCSP(t *testing.T) {
 	if !strings.Contains(recorder.Body.String(), `name="upaste-csp-nonce"`) {
 		t.Fatal("cap index did not carry a CSP nonce meta tag")
 	}
+	scriptDirective := capCSP[:strings.Index(capCSP, "; style-src")]
+	if strings.Contains(scriptDirective, "https://cap.example.com") {
+		t.Fatalf("cap origin must not be trusted as executable script: %q", capCSP)
+	}
 	if strings.Contains(capCSP, "'unsafe-inline'") || strings.Contains(capCSP, "'unsafe-eval'") {
 		t.Fatalf("cap CSP weakened: %q", capCSP)
 	}

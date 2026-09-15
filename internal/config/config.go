@@ -135,13 +135,18 @@ func Parse(args []string, lookup LookupEnv) (Config, error) {
 	if mode == ModePublic && !adminEnabled {
 		return Config{}, errors.New("public deployment mode requires UPASTE_ADMIN_TOKEN")
 	}
-	adminCookieSecure := mode == ModePublic
+	adminCookieSecure := false
 	if raw, ok := lookupEnv(lookup, "UPASTE_ADMIN_COOKIE_SECURE"); ok && strings.TrimSpace(raw) != "" {
 		parsed, err := strconv.ParseBool(strings.TrimSpace(raw))
 		if err != nil {
 			return Config{}, fmt.Errorf("invalid UPASTE_ADMIN_COOKIE_SECURE: %w", err)
 		}
+		if mode == ModePublic && !parsed {
+			return Config{}, errors.New("public deployment mode requires UPASTE_ADMIN_COOKIE_SECURE=true")
+		}
 		adminCookieSecure = parsed
+	} else if mode == ModePublic {
+		adminCookieSecure = true
 	}
 
 	addr = strings.TrimSpace(addr)

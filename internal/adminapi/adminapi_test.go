@@ -2,6 +2,7 @@ package adminapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -251,5 +252,100 @@ func TestAdminLoginBruteForceRateLimit(t *testing.T) {
 	response := env.serve(request)
 	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") == "" {
 		t.Fatalf("rate limit status/retry = %d/%q", response.Code, response.Header().Get("Retry-After"))
+	}
+}
+
+func TestAdminListIsMetadataOnlyWithLargePayloads(t *testing.T) {
+	env := newEnv(t)
+	ctx := context.Background()
+	largeText := "large-text-secret-" + strings.Repeat("x", 300*1024)
+	text, _, err := env.service.Create(ctx, share.CreateInput{Text: share.Text{Format: domain.TextPlain, Content: largeText}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext := make([]byte, 300*1024)
+	for i := range ciphertext {
+		ciphertext[i] = byte(i)
+	}
+	encrypted, _, err := env.service.CreateEncrypted(ctx, share.EncryptedCreateInput{EncryptedText: share.EncryptedText{
+		Protocol: share.EncryptedTextProtocolV1, Nonce: make([]byte, 12), Ciphertext: ciphertext,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, err := env.service.StageFile(ctx, strings.NewReader(strings.Repeat("f", 200*1024)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, _, err := env.service.CreateFile(ctx, "large-admin.bin", staged, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookie, _ := env.login()
+	list := env.request(http.MethodGet, "/api/v1/admin/shares?limit=10", cookie, "", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d; body=%s", list.Code, list.Body.String())
+	}
+	raw := list.Body.String()
+	for _, forbidden := range []string{
+		"large-text-secret-",
+		base64.StdEncoding.EncodeToString(ciphertext),
+		base64.RawURLEncoding.EncodeToString(ciphertext),
+		`"text"`, `"encrypted_text"`, `"file"`, `"nonce"`, `"ciphertext"`, `"storage_key"`, "owner_token", "verifier",
+	} {
+		if strings.Contains(raw, forbidden) {
+			t.Fatalf("metadata-only list leaked %q: %s", forbidden, raw[:min(len(raw), 400)])
+		}
+	}
+	var listBody struct {
+		Shares []struct {
+			ID            string `json:"id"`
+			PayloadKind   string `json:"payload_kind"`
+			PrivacyMode   string `json:"privacy_mode"`
+			State         string `json:"state"`
+			PayloadBytes  int64  `json:"payload_bytes"`
+			FileFilename  string `json:"file_filename"`
+			FileMediaType string `json:"file_media_type"`
+		} `json:"shares"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(listBody.Shares) != 3 {
+		t.Fatalf("list shares = %d", len(listBody.Shares))
+	}
+	bytesByID := map[string]int64{}
+	for _, item := range listBody.Shares {
+		bytesByID[item.ID] = item.PayloadBytes
+	}
+	if bytesByID[text.ID.String()] != int64(len(largeText)) ||
+		bytesByID[encrypted.ID.String()] != int64(len(ciphertext)) ||
+		bytesByID[file.ID.String()] != int64(200*1024) {
+		t.Fatalf("payload bytes = %+v", bytesByID)
+	}
+
+	// Detail remains explicit and on demand.
+	detail := env.request(http.MethodGet, "/api/v1/admin/shares/"+text.ID.String(), cookie, "", "")
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "large-text-secret-") {
+		t.Fatalf("text detail status/content = %d", detail.Code)
+	}
+	encryptedDetail := env.request(http.MethodGet, "/api/v1/admin/shares/"+encrypted.ID.String(), cookie, "", "")
+	if encryptedDetail.Code != http.StatusOK {
+		t.Fatalf("encrypted detail status = %d", encryptedDetail.Code)
+	}
+	if strings.Contains(encryptedDetail.Body.String(), base64.RawURLEncoding.EncodeToString(ciphertext)) {
+		t.Fatal("encrypted detail exposed ciphertext bytes")
+	}
+	if !strings.Contains(encryptedDetail.Body.String(), "plaintext unavailable") {
+		t.Fatal("encrypted detail missing unavailable notice")
+	}
+
+	exact := env.request(http.MethodGet, "/api/v1/admin/shares?id="+encrypted.ID.String(), cookie, "", "")
+	if exact.Code != http.StatusOK || !strings.Contains(exact.Body.String(), encrypted.ID.String()) {
+		t.Fatalf("exact metadata list status = %d", exact.Code)
+	}
+	if strings.Contains(exact.Body.String(), base64.RawURLEncoding.EncodeToString(ciphertext)) || strings.Contains(exact.Body.String(), `"nonce"`) {
+		t.Fatal("exact metadata list leaked encrypted payload data")
 	}
 }

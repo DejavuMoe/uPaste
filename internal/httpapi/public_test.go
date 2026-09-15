@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -14,12 +15,14 @@ import (
 )
 
 type stubChallenge struct {
-	err   error
-	token string
+	err      error
+	token    string
+	remoteIP string
 }
 
-func (stub *stubChallenge) Verify(_ context.Context, token, _ string) error {
+func (stub *stubChallenge) Verify(_ context.Context, token, remoteIP string) error {
 	stub.token = token
+	stub.remoteIP = remoteIP
 	return stub.err
 }
 
@@ -139,4 +142,50 @@ func (env *apiTestEnv) requestWithHeader(method, path string, body []byte, name,
 	recorder := httptest.NewRecorder()
 	env.handler.ServeHTTP(recorder, request)
 	return recorder
+}
+
+func TestChallengeRemoteIPUsesTrustedProxyIdentity(t *testing.T) {
+	trusted := []netip.Prefix{
+		netip.MustParsePrefix("127.0.0.0/8"),
+		netip.MustParsePrefix("10.0.0.0/8"),
+	}
+	verifier := &stubChallenge{}
+	env := newPublicEnv(t, verifier)
+	env.handler = NewWithOptions(env.shares, "https://files.example.test", env.log, abuse.New(abuse.Config{Trusted: trusted, Disabled: true}), Options{
+		Public:           true,
+		PublicDefaultTTL: 24 * time.Hour,
+		PublicMaxTTL:     168 * time.Hour,
+		Challenge:        verifier,
+		ChallengeConfig:  challenge.PublicConfig{Provider: "turnstile", SiteKey: "site", Hostname: "paste.example.com"},
+		ChallengeTimeout: time.Second,
+	})
+
+	body := []byte(`{"payload_kind":"TEXT","privacy_mode":"STANDARD","text":{"format":"PLAIN","content":"x"},"expires_at":null}`)
+	tests := []struct {
+		name       string
+		remoteAddr string
+		xff        string
+		want       string
+	}{
+		{"untrusted peer ignores spoofed xff", "198.51.100.2:1234", "203.0.113.9", "198.51.100.2"},
+		{"trusted proxy uses resolved client", "127.0.0.1:1234", "203.0.113.9", "203.0.113.9"},
+		{"trusted multi-hop stops at first untrusted", "127.0.0.1:1234", "198.51.100.7, 10.0.0.5, 127.0.0.1", "198.51.100.7"},
+		{"malformed xff falls back to peer", "127.0.0.1:1234", "not-an-ip", "127.0.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/shares", strings.NewReader(string(body)))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set(ChallengeHeader, "token")
+			request.Header.Set("X-Forwarded-For", test.xff)
+			request.RemoteAddr = test.remoteAddr
+			response := env.serve(request)
+			if response.Code != http.StatusCreated {
+				t.Fatalf("status = %d; body=%s", response.Code, response.Body.String())
+			}
+			if verifier.remoteIP != test.want {
+				t.Fatalf("remoteip = %q, want %q", verifier.remoteIP, test.want)
+			}
+		})
+	}
 }

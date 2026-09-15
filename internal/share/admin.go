@@ -14,6 +14,23 @@ import (
 	"github.com/DejavuMoe/uPaste/internal/domain"
 )
 
+// adminListQuery is deliberately payload-free: it computes byte counts and
+// lightweight File metadata in SQLite without selecting TEXT/BLOB payload
+// content, ciphertext, nonce, storage keys, hashes, or verifiers.
+const adminListQuery = `
+SELECT s.id, s.payload_kind, s.privacy_mode, s.created_at, s.updated_at, s.expires_at,
+       CASE
+         WHEN s.payload_kind = 'TEXT' AND s.privacy_mode = 'STANDARD' THEN length(CAST(p.content AS BLOB))
+         WHEN s.payload_kind = 'TEXT' AND s.privacy_mode = 'ENCRYPTED' THEN length(e.ciphertext)
+         WHEN s.payload_kind = 'FILE' THEN f.size_bytes
+       END AS payload_bytes,
+       f.original_filename, f.detected_media_type
+FROM shares s
+LEFT JOIN standard_text_payloads p ON p.share_id = s.id
+LEFT JOIN encrypted_text_payloads e ON e.share_id = s.id
+LEFT JOIN file_payloads f ON f.share_id = s.id
+`
+
 // AdminFilter selects a bounded, cursor-paginated admin listing.
 type AdminFilter struct {
 	PayloadKind domain.PayloadKind
@@ -36,8 +53,22 @@ type AdminSummary struct {
 	FileBytes int64 `json:"file_bytes"`
 }
 
-// AdminList returns a bounded page and an opaque next cursor.
-func (service *Service) AdminList(ctx context.Context, filter AdminFilter) ([]Share, string, error) {
+// AdminListItem is a lightweight governance listing row. It deliberately
+// contains no payload content, ciphertext, nonce, storage key, or verifier.
+type AdminListItem struct {
+	ID            capability.ShareID
+	PayloadKind   domain.PayloadKind
+	PrivacyMode   domain.PrivacyMode
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ExpiresAt     *time.Time
+	PayloadBytes  int64
+	FileFilename  string
+	FileMediaType string
+}
+
+// AdminList returns a bounded page of metadata-only rows and an opaque cursor.
+func (service *Service) AdminList(ctx context.Context, filter AdminFilter) ([]AdminListItem, string, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
@@ -94,15 +125,9 @@ func (service *Service) AdminList(ctx context.Context, filter AdminFilter) ([]Sh
 	if len(clauses) > 0 {
 		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
-	query := `
-SELECT s.id, s.payload_kind, s.privacy_mode, s.created_at, s.updated_at, s.expires_at,
-       p.format, p.content, e.protocol, e.nonce, e.ciphertext,
-       f.storage_key, f.original_filename, f.size_bytes, f.detected_media_type, f.content_sha256
-FROM shares s
-LEFT JOIN standard_text_payloads p ON p.share_id = s.id
-LEFT JOIN encrypted_text_payloads e ON e.share_id = s.id
-LEFT JOIN file_payloads f ON f.share_id = s.id
-` + where + fmt.Sprintf(" ORDER BY s.created_at %s, s.id %s LIMIT ?", order, order)
+	// Compute only byte counts and lightweight File metadata in SQLite. Payload
+	// TEXT/BLOB columns are never selected into the Go process here.
+	query := adminListQuery + where + fmt.Sprintf(" ORDER BY s.created_at %s, s.id %s LIMIT ?", order, order)
 	params = append(params, filter.Limit+1)
 
 	rows, err := service.db.QueryContext(ctx, query, params...)
@@ -110,18 +135,18 @@ LEFT JOIN file_payloads f ON f.share_id = s.id
 		return nil, "", fmt.Errorf("admin list shares: %w", err)
 	}
 	defer rows.Close()
-	values := make([]Share, 0, filter.Limit)
+	values := make([]AdminListItem, 0, filter.Limit)
 	hasMore := false
 	for rows.Next() {
 		if len(values) == filter.Limit {
 			hasMore = true
 			break
 		}
-		value, err := scanAdminShare(rows)
+		item, err := scanAdminListItem(rows)
 		if err != nil {
 			return nil, "", err
 		}
-		values = append(values, value)
+		values = append(values, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, "", err
@@ -203,65 +228,54 @@ WHERE s.id = ?
 	return nil
 }
 
-func scanAdminShare(rows *sql.Rows) (Share, error) {
-	var value Share
+func scanAdminListItem(rows *sql.Rows) (AdminListItem, error) {
+	var item AdminListItem
 	var idValue, kind, privacy string
 	var createdAt, updatedAt int64
-	var expiresAt, fileSize sql.NullInt64
-	var format, content, protocol, storageKey, filename, mediaType sql.NullString
-	var nonce, ciphertext, fileHash []byte
+	var expiresAt, payloadBytes sql.NullInt64
+	var filename, mediaType sql.NullString
 	if err := rows.Scan(
 		&idValue, &kind, &privacy, &createdAt, &updatedAt, &expiresAt,
-		&format, &content, &protocol, &nonce, &ciphertext,
-		&storageKey, &filename, &fileSize, &mediaType, &fileHash,
+		&payloadBytes, &filename, &mediaType,
 	); err != nil {
-		return Share{}, fmt.Errorf("scan admin Share: %w", err)
+		return AdminListItem{}, fmt.Errorf("scan admin list item: %w", err)
 	}
 	parsedID, err := capability.ParseShareID(idValue)
 	if err != nil {
-		return Share{}, fmt.Errorf("admin Share ID: %w", err)
+		return AdminListItem{}, fmt.Errorf("admin list Share ID: %w", err)
 	}
-	value.ID = parsedID
-	value.PayloadKind, err = domain.ParsePayloadKind(kind)
+	item.ID = parsedID
+	item.PayloadKind, err = domain.ParsePayloadKind(kind)
 	if err != nil {
-		return Share{}, err
+		return AdminListItem{}, fmt.Errorf("admin list payload kind: %w", err)
 	}
-	value.PrivacyMode, err = domain.ParsePrivacyMode(privacy)
+	item.PrivacyMode, err = domain.ParsePrivacyMode(privacy)
 	if err != nil {
-		return Share{}, err
+		return AdminListItem{}, fmt.Errorf("admin list privacy mode: %w", err)
 	}
-	value.CreatedAt = time.UnixMilli(createdAt).UTC()
-	value.UpdatedAt = time.UnixMilli(updatedAt).UTC()
-	value.ExpiresAt = expirationTime(expiresAt)
-	switch value.PayloadKind {
+	item.CreatedAt = time.UnixMilli(createdAt).UTC()
+	item.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+	item.ExpiresAt = expirationTime(expiresAt)
+	if !payloadBytes.Valid || payloadBytes.Int64 < 0 {
+		return AdminListItem{}, ErrPayloadMismatch
+	}
+	item.PayloadBytes = payloadBytes.Int64
+	switch item.PayloadKind {
 	case domain.PayloadText:
-		if value.PrivacyMode == domain.PrivacyStandard {
-			if !format.Valid || !content.Valid {
-				return Share{}, ErrPayloadMismatch
-			}
-			textFormat, err := domain.ParseTextFormat(format.String)
-			if err != nil {
-				return Share{}, err
-			}
-			value.Text = &Text{Format: textFormat, Content: content.String}
-		} else {
-			if !protocol.Valid {
-				return Share{}, ErrPayloadMismatch
-			}
-			value.EncryptedText = &EncryptedText{Protocol: protocol.String, Nonce: nonce, Ciphertext: ciphertext}
+		if filename.Valid || mediaType.Valid {
+			return AdminListItem{}, ErrPayloadMismatch
 		}
 	case domain.PayloadFile:
-		if !storageKey.Valid || !filename.Valid || !fileSize.Valid || !mediaType.Valid || len(fileHash) != 32 {
-			return Share{}, ErrPayloadMismatch
+		if item.PrivacyMode != domain.PrivacyStandard || !filename.Valid || !mediaType.Valid {
+			return AdminListItem{}, ErrPayloadMismatch
 		}
-		value.File = &File{StorageKey: storageKey.String, Filename: filename.String, Size: fileSize.Int64, MediaType: mediaType.String}
-		copy(value.File.SHA256[:], fileHash)
+		item.FileFilename = filename.String
+		item.FileMediaType = mediaType.String
 	default:
-		return Share{}, ErrPayloadMismatch
+		return AdminListItem{}, ErrPayloadMismatch
 	}
-	return value, nil
+	return item, nil
 }
-
 func encodeAdminCursor(createdAt int64, id string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(createdAt, 10) + "|" + id))
 }

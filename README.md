@@ -131,7 +131,7 @@ cap.example.com    -> reverse proxy -> Cap Standalone
 
 The challenge token is sent only in `X-uPaste-Challenge`, never in bodies, URLs, queries, cookies, or browser storage. Cap's standalone backend must not be directly Internet-reachable, and its reverse proxy must overwrite client-IP forwarding headers. Turnstile is supported as an alternative with `action=create_share` and hostname validation.
 
-`/admin` and `/api/v1/admin/*` are 404 unless `UPASTE_ADMIN_TOKEN` is configured. The admin page is a compact operations table for filtering, inspecting server-visible metadata/content, deleting, bulk-deleting, and cleaning expired content. Encrypted Shares remain server-side ciphertext: the admin UI shows metadata and ciphertext size only.
+`/admin` and `/api/v1/admin/*` are 404 unless `UPASTE_ADMIN_TOKEN` is configured. The admin page is a compact operations table for filtering, deleting, bulk-deleting, and cleaning expired content. The paginated list is metadata-only (`payload_bytes` plus lightweight File metadata); clicking Inspect fetches `GET /api/v1/admin/shares/:id` on demand for server-visible content or encrypted metadata. Encrypted Shares remain server-side ciphertext: the detail view shows metadata and ciphertext size only.
 
 ## Native deployment in brief
 

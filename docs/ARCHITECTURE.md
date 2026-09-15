@@ -11,7 +11,7 @@ The implemented internal packages are deliberately limited:
 - `domain`: closed V1 classifications, privacy compatibility, and pure expiration semantics.
 - `challenge`: Cap and Turnstile server-side challenge verification with fail-closed provider errors.
 - `admin`: one Superadmin token verifier, bounded login limiter, and in-memory CSRF-bound sessions.
-- `adminapi`: bounded governance API for summary, listing/inspection, delete, bulk delete, and expired cleanup.
+- `adminapi`: bounded governance API for summary, metadata-only listing, on-demand detail inspection, delete, bulk delete, and expired cleanup.
 - `capability`: canonical random Share IDs and owner capabilities plus SHA-256 verification.
 - `config`: CLI/environment/default resolution for addresses, File origin, trusted proxies, and data directory.
 - `database`: filesystem preparation, hardened SQLite connections, and embedded forward migrations.
@@ -55,7 +55,7 @@ X-Frame-Options: DENY
 Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'
 ```
 
-The private baseline policy uses no `unsafe-eval`, `unsafe-inline`, wildcard sources, external script hosts, or external font hosts. Public challenge modes extend it only with the exact configured Cap origin (plus `wasm-unsafe-eval`, a worker `blob:` allowance, and per-response nonces) or the canonical Cloudflare Turnstile origin. File downloads remain direct navigations to the separately configured File origin, which has its own attachment/CSP/no-store/no-referrer/nosniff/frame-denial policy.
+The private baseline policy uses no `unsafe-eval`, `unsafe-inline`, wildcard sources, external script hosts, or external font hosts. Public challenge modes extend it only with the exact configured Cap origin in `connect-src` (plus `wasm-unsafe-eval`, a worker `blob:` allowance, and per-response nonces) or the canonical Cloudflare Turnstile origin. File downloads remain direct navigations to the separately configured File origin, which has its own attachment/CSP/no-store/no-referrer/nosniff/frame-denial policy.
 
 ## Build metadata and release packaging
 

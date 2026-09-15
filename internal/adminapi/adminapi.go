@@ -187,9 +187,9 @@ func (api *API) listShares(w http.ResponseWriter, r *http.Request) {
 		api.writeError(w, http.StatusBadRequest, "invalid_request", "invalid cursor or listing parameters")
 		return
 	}
-	items := make([]adminShareResponse, 0, len(values))
+	items := make([]adminListItemResponse, 0, len(values))
 	for _, value := range values {
-		items = append(items, api.responseFromShare(value))
+		items = append(items, api.listItemFromShare(value))
 	}
 	api.writeJSON(w, http.StatusOK, map[string]any{"shares": items, "next_cursor": next})
 }
@@ -346,6 +346,44 @@ func (api *API) methodNotAllowed(w http.ResponseWriter, allow string) {
 func (api *API) clientKey(r *http.Request) string {
 	address := abuse.ClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), api.trusted)
 	return abuse.RateKey(address)
+}
+
+// adminListItemResponse is the metadata-only paginated listing shape. It
+// never contains payload content, ciphertext, nonce, storage keys, or verifier.
+type adminListItemResponse struct {
+	ID            string             `json:"id"`
+	PayloadKind   domain.PayloadKind `json:"payload_kind"`
+	PrivacyMode   domain.PrivacyMode `json:"privacy_mode"`
+	State         string             `json:"state"`
+	CreatedAt     string             `json:"created_at"`
+	UpdatedAt     string             `json:"updated_at"`
+	ExpiresAt     *string            `json:"expires_at"`
+	PayloadBytes  int64              `json:"payload_bytes"`
+	FileFilename  string             `json:"file_filename,omitempty"`
+	FileMediaType string             `json:"file_media_type,omitempty"`
+}
+
+func (api *API) listItemFromShare(value share.AdminListItem) adminListItemResponse {
+	response := adminListItemResponse{
+		ID:            value.ID.String(),
+		PayloadKind:   value.PayloadKind,
+		PrivacyMode:   value.PrivacyMode,
+		CreatedAt:     value.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt:     value.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		PayloadBytes:  value.PayloadBytes,
+		FileFilename:  value.FileFilename,
+		FileMediaType: value.FileMediaType,
+	}
+	if domain.IsExpired(value.ExpiresAt, api.now()) {
+		response.State = "expired"
+	} else {
+		response.State = "active"
+	}
+	if value.ExpiresAt != nil {
+		formatted := value.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		response.ExpiresAt = &formatted
+	}
+	return response
 }
 
 type adminShareResponse struct {

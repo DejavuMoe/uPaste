@@ -15,7 +15,7 @@ export interface AdminSummary {
   file_bytes: number;
 }
 
-export interface AdminShareView {
+export interface AdminListItem {
   id: string;
   payload_kind: PayloadKind;
   privacy_mode: PrivacyMode;
@@ -23,6 +23,12 @@ export interface AdminShareView {
   created_at: string;
   updated_at: string;
   expires_at: string | null;
+  payload_bytes: number;
+  file_filename?: string;
+  file_media_type?: string;
+}
+
+export interface AdminShareDetail extends AdminListItem {
   text?: { format: string; content: string };
   encrypted_text?: { protocol: string; nonce: string; ciphertext_bytes: number; notice: string };
   file?: { filename: string; size: number; media_type: string; sha256: string; download_url: string };
@@ -91,17 +97,17 @@ export interface AdminListParams {
   limit?: number;
 }
 
-export function listAdminShares(params: AdminListParams): Promise<{ shares: AdminShareView[]; next_cursor: string }> {
+export function listAdminShares(params: AdminListParams): Promise<{ shares: AdminListItem[]; next_cursor: string }> {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== '') query.set(key, String(value));
   });
   const suffix = query.toString();
-  return request<{ shares: AdminShareView[]; next_cursor: string }>(`/api/v1/admin/shares${suffix ? `?${suffix}` : ''}`);
+  return request<{ shares: AdminListItem[]; next_cursor: string }>(`/api/v1/admin/shares${suffix ? `?${suffix}` : ''}`);
 }
 
-export function getAdminShare(id: string): Promise<{ share: AdminShareView }> {
-  return request<{ share: AdminShareView }>(`/api/v1/admin/shares/${encodeURIComponent(id)}`);
+export function getAdminShare(id: string): Promise<{ share: AdminShareDetail }> {
+  return request<{ share: AdminShareDetail }>(`/api/v1/admin/shares/${encodeURIComponent(id)}`);
 }
 
 export function deleteAdminShare(id: string, csrf: string): Promise<void> {
