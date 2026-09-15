@@ -210,6 +210,7 @@ export function createFile(
     formData.append(
       'metadata',
       new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+      '',
     )
     formData.append('file', file)
 

@@ -270,6 +270,13 @@ describe('api client', () => {
       expect(result).toEqual(mockResponse);
       expect(mockXHR.open).toHaveBeenCalledWith('POST', '/api/v1/shares');
       expect(sentData).toBeInstanceOf(FormData);
+      const metadata = sentData!.get('metadata') as File;
+      const uploaded = sentData!.get('file') as File;
+      expect(metadata.type).toBe('application/json');
+      expect(metadata.name).toBe('');
+      await expect(metadata.text()).resolves.toBe(JSON.stringify({ payload_kind: 'FILE', privacy_mode: 'STANDARD', expires_at: null }));
+      expect(uploaded.name).toBe('test.txt');
+      expect(uploaded.type).toBe('text/plain');
       expect(progressUpdates.length).toBe(1);
       expect(progressUpdates[0].percent).toBe(50);
     });
