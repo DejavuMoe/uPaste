@@ -10,7 +10,7 @@ import (
 // TestEmbeddedProductionBundle proves that a -tags production build actually
 // contains a staged Vite bundle rather than compiling against an empty tree.
 func TestEmbeddedProductionBundle(t *testing.T) {
-	handler, err := NewEmbedded()
+	handler, err := NewEmbedded(Options{})
 	if err != nil {
 		t.Fatalf("NewEmbedded() error = %v", err)
 	}
