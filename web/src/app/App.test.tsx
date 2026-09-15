@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import { MemoryRouter } from 'react-router';
-import { AppRoutes } from './App';
+import { createMemoryRouter, RouterProvider } from 'react-router';
+import { appRoutes } from './App';
 import { ThemeProvider } from './theme';
 import { OwnerCapabilityProvider, useOwnerCapabilities } from './ownerCapabilities';
 
@@ -23,10 +23,8 @@ describe('App routing, titles, & security', () => {
     return render(
       <ThemeProvider>
         <OwnerCapabilityProvider>
-          <MemoryRouter initialEntries={[initialPath]}>
-            <Helper />
-            <AppRoutes />
-          </MemoryRouter>
+          <Helper />
+          <RouterProvider router={createMemoryRouter(appRoutes, { initialEntries: [initialPath] })} />
         </OwnerCapabilityProvider>
       </ThemeProvider>,
     );

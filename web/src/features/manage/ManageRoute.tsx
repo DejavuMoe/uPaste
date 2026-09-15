@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Link, UNSAFE_DataRouterContext, useBlocker, useLocation, useNavigate, useParams } from 'react-router';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError, deleteShare, getShare, updateShare } from '../../app/api';
 import type { ShareMetadata, TextFormat } from '../../app/types';
 import { decryptWithFragment, encryptWithFragment, type EncryptedPayloadV1 } from '../../crypto/encryptedText';
@@ -22,17 +22,12 @@ function localDate(value: string) {
   return date.toISOString().slice(0, 16);
 }
 
-function NavigationGuard({ dirty }: { dirty: boolean }) {
-  const blocker = useBlocker(dirty);
-  return blocker.state === 'blocked' ? <Dialog title="You have unsaved changes." onClose={() => blocker.reset?.()}><p>Are you sure you want to discard your draft?</p><Button variant="secondary" onClick={() => blocker.reset?.()}>Keep editing</Button><Button variant="danger" onClick={() => blocker.proceed?.()}>Discard and leave</Button></Dialog> : null;
-}
-
 export const ManageRoute: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation(); const navigate = useNavigate();
   const { get, remember, forget } = useOwnerCapabilities();
   const [share, setShare] = useState<ShareMetadata | null>(null);
-  const [terminal, setTerminal] = useState<'loading' | 'not_found' | 'expired' | 'server_error' | 'deleted'>('loading');
+  const [terminal, setTerminal] = useState<'loading' | 'ready' | 'not_found' | 'expired' | 'server_error' | 'deleted'>('loading');
   const [tokenInput, setTokenInput] = useState(''); const [reveal, setReveal] = useState(false);
   const [format, setFormat] = useState<TextFormat>('PLAIN'); const [content, setContent] = useState('');
   const [baseline, setBaseline] = useState({ format: 'PLAIN' as TextFormat, content: '' });
@@ -43,7 +38,7 @@ export const ManageRoute: React.FC = () => {
   const token = id ? get(id) : undefined;
   const contentDirty = format !== baseline.format || content !== baseline.content;
   const dirty = contentDirty || expiryDirty;
-  const dataRouter = useContext(UNSAFE_DataRouterContext);
+  const blocker = useBlocker(dirty);
   useDocumentTitle(['not_found', 'expired', 'server_error', 'deleted'].includes(terminal) ? 'uPaste' : 'Manage share · uPaste');
 
   useEffect(() => {
@@ -53,6 +48,7 @@ export const ManageRoute: React.FC = () => {
   }, [dirty]);
 
   useEffect(() => {
+    if (terminal === 'deleted') return;
     if (!id) { setTerminal('not_found'); return; }
     const controller = new AbortController(); setTerminal('loading');
     getShare(id, controller.signal).then(async ({ share: loaded }) => {
@@ -66,7 +62,7 @@ export const ManageRoute: React.FC = () => {
         try { const text = await decryptWithFragment(fragment, loaded.encrypted_text as EncryptedPayloadV1); setFormat(text.format); setContent(text.content); setBaseline(text); setDecryptAvailable(true); }
         catch { setDecryptAvailable(false); }
       } else setDecryptAvailable(false);
-      setTerminal('loading');
+      setTerminal('ready');
     }).catch((error) => {
       if (error instanceof ApiError && error.status === 404) setTerminal('not_found');
       else if (error instanceof ApiError && error.status === 410) setTerminal('expired');
@@ -76,6 +72,7 @@ export const ManageRoute: React.FC = () => {
   }, [id, location.hash]);
 
   const expiryValue = useMemo(() => expiry === null ? 'never' : 'custom', [expiry]);
+  const expiryInvalid = expiryValue === 'custom' && (!customExpiry || !expiry || new Date(expiry).getTime() <= Date.now());
   const setExpiration = (value: string) => {
     setExpiryDirty(true);
     if (value === 'never') { setExpiry(null); setCustomExpiry(''); }
@@ -89,7 +86,7 @@ export const ManageRoute: React.FC = () => {
     setMessage(error.status === 429 ? `Too many requests${error.retryAfterSeconds !== undefined ? `. Try again in ${error.retryAfterSeconds} seconds.` : '.'}` : 'Could not save changes.');
   };
   const save = async () => {
-    if (!id || !token || !share || !dirty || submitting || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))) return;
+    if (!id || !token || !share || !dirty || submitting || expiryInvalid || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))) return;
     const patch: Parameters<typeof updateShare>[2] = {};
     if (contentDirty) {
       if (share.privacy_mode === 'ENCRYPTED') patch.encrypted_text = await encryptWithFragment(window.location.hash || location.hash, format, content);
@@ -116,7 +113,7 @@ export const ManageRoute: React.FC = () => {
     {share.payload_kind === 'FILE' && <dl><dt>Filename</dt><dd>{share.file!.filename}</dd><dt>Size</dt><dd>{formatFileSize(share.file!.size)}</dd><dt>Media type</dt><dd>{share.file!.media_type}</dd></dl>}
     {share.payload_kind === 'TEXT' && !textEditable && <p>{location.hash ? 'Unable to decrypt this share. Expiration and deletion remain available with the management token.' : 'Content editing is unavailable without the decryption key. You can still change expiration or delete this share.'}</p>}
     {textEditable && <><label>Format<select value={format} onChange={(event) => setFormat(event.target.value as TextFormat)}><option value="PLAIN">Plain text</option><option value="SOURCE">Source</option><option value="MARKDOWN">Markdown</option></select></label><label>Editor<textarea className={format === 'SOURCE' ? 'font-mono' : ''} value={content} onChange={(event) => setContent(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void save(); } }} /></label><small>{bytes(content)} / {maxBytes} B</small></>}
-    <label>Expires<select aria-label="Expiration" value={expiryValue} onChange={(event) => { if (event.target.value === 'never') setExpiration('never'); else if (!customExpiry) setExpiration(localDate(new Date(Date.now() + 86400000).toISOString())); }}><option value="never">Never</option><option value="custom">Custom…</option></select></label>{expiryValue === 'custom' && <input aria-label="Custom expiration date and time" type="datetime-local" value={customExpiry} onChange={(event) => setExpiration(event.target.value)} />}
-    <div className="viewer-actions"><Button onClick={() => void save()} disabled={!dirty || submitting || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))}>{submitting ? 'Saving…' : textEditable ? 'Save changes' : 'Update expiration'}</Button><Button variant="secondary" onClick={cancel}>Cancel</Button><Button variant="danger" onClick={() => setDeleteOpen(true)}>Delete share</Button></div>
-  </section>{deleteOpen && <Dialog title="Delete this share?" onClose={() => !submitting && setDeleteOpen(false)}><p>This permanently deletes the share and its content. This action cannot be undone.</p><Button variant="secondary" disabled={submitting} onClick={() => setDeleteOpen(false)}>Cancel</Button><Button variant="danger" disabled={submitting} onClick={() => void remove()}>{submitting ? 'Deleting…' : 'Delete permanently'}</Button></Dialog>}{dataRouter && <NavigationGuard dirty={dirty} />}</main>;
+    <label>Expires<select aria-label="Expiration" value={expiryValue} onChange={(event) => { if (event.target.value === 'never') setExpiration('never'); else if (!customExpiry) setExpiration(localDate(new Date(Date.now() + 86400000).toISOString())); }}><option value="never">Never</option><option value="custom">Custom…</option></select></label>{expiryValue === 'custom' && <><input aria-label="Custom expiration date and time" type="datetime-local" value={customExpiry} onChange={(event) => setExpiration(event.target.value)} />{expiryInvalid && <p role="alert">Expiration date must be in the future.</p>}</>}
+    <div className="viewer-actions"><Button onClick={() => void save()} disabled={!dirty || submitting || expiryInvalid || (contentDirty && (!bytes(content) || bytes(content) > maxBytes))}>{submitting ? 'Saving…' : textEditable ? 'Save changes' : 'Update expiration'}</Button><Button variant="secondary" onClick={cancel}>Cancel</Button><Button variant="danger" onClick={() => setDeleteOpen(true)}>Delete share</Button></div>
+  </section>{deleteOpen && <Dialog title="Delete this share?" onClose={() => !submitting && setDeleteOpen(false)}><p>This permanently deletes the share and its content. This action cannot be undone.</p><Button variant="secondary" disabled={submitting} onClick={() => setDeleteOpen(false)}>Cancel</Button><Button variant="danger" disabled={submitting} onClick={() => void remove()}>{submitting ? 'Deleting…' : 'Delete permanently'}</Button></Dialog>}{blocker.state === 'blocked' && <Dialog title="You have unsaved changes." onClose={() => blocker.reset?.()}><p>Are you sure you want to discard your draft?</p><Button variant="secondary" onClick={() => blocker.reset?.()}>Keep editing</Button><Button variant="danger" onClick={() => blocker.proceed?.()}>Discard and leave</Button></Dialog>}</main>;
 };
