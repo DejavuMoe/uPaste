@@ -38,7 +38,7 @@ export const ManageRoute: React.FC = () => {
   const token = id ? get(id) : undefined;
   const contentDirty = format !== baseline.format || content !== baseline.content;
   const dirty = contentDirty || expiryDirty;
-  const blocker = useBlocker(dirty);
+  const blocker = useBlocker(dirty && terminal !== 'deleted');
   useDocumentTitle(['not_found', 'expired', 'server_error', 'deleted'].includes(terminal) ? 'uPaste' : 'Manage share · uPaste');
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export const ManageRoute: React.FC = () => {
   const setExpiration = (value: string) => {
     setExpiryDirty(true); setExpiryMode(value as typeof expiryMode);
     if (value === 'never') { setExpiry(null); setCustomExpiry(''); return; }
-    if (value !== 'custom') { const hours = value === '1h' ? 1 : value === '1d' ? 24 : value === '7d' ? 168 : 720; setExpiry(new Date(Date.now() + hours * 3600000).toISOString()); return; }
+    if (value !== 'custom') { setExpiry(undefined); return; }
     setCustomExpiry(''); setExpiry(undefined);
   };
   const setCustomExpiration = (value: string) => { setExpiryDirty(true); setCustomExpiry(value); const parsed = new Date(value); setExpiry(value && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : undefined); };
@@ -95,15 +95,22 @@ export const ManageRoute: React.FC = () => {
         if (share.privacy_mode === 'ENCRYPTED') patch.encrypted_text = await encryptWithFragment(window.location.hash || location.hash, format, content);
         else patch.text = { format, content };
       }
-      if (expiryDirty) patch.expires_at = expiry!;
+      if (expiryDirty) {
+        if (expiryMode === 'never' || expiryMode === 'custom') patch.expires_at = expiry!;
+        else { const hours = expiryMode === '1h' ? 1 : expiryMode === '1d' ? 24 : expiryMode === '7d' ? 168 : 720; patch.expires_at = new Date(Date.now() + hours * 3600000).toISOString(); }
+      }
       const result = await updateShare(id, token, patch); setShare(result.share); setBaseline({ format, content }); setExpiry(result.share.expires_at); setExpiryMode(result.share.expires_at ? 'custom' : 'never'); setCustomExpiry(result.share.expires_at ? localDate(result.share.expires_at) : ''); setExpiryDirty(false); setMessage('Changes saved'); }
     catch (error) { handleError(error); } finally { setSubmitting(false); }
   };
   const remove = async () => {
     if (!id || !token || submitting) return; setSubmitting(true);
-    try { await deleteShare(id, token); forget(id); setShare(null); setContent(''); setBaseline({ format: 'PLAIN', content: '' }); setExpiryDirty(false); setTokenInput(''); setDeleteOpen(false); setTerminal('deleted'); navigate(`/manage/${id}`, { replace: true }); }
+    try { await deleteShare(id, token); forget(id); setShare(null); setContent(''); setFormat('PLAIN'); setBaseline({ format: 'PLAIN', content: '' }); setExpiryDirty(false); setTokenInput(''); setDeleteOpen(false); setTerminal('deleted'); }
     catch (error) { setDeleteOpen(false); handleError(error); } finally { setSubmitting(false); }
   };
+  useEffect(() => {
+    if (terminal === 'deleted' && id && location.hash) navigate(`/manage/${id}`, { replace: true });
+  }, [terminal, id, location.hash, navigate]);
+
   const cancel = () => navigate(`/s/${id}${location.hash}`);
 
   if (terminal === 'not_found' || terminal === 'expired' || terminal === 'server_error' || terminal === 'deleted') return <main className="page-container"><section className="viewer-card" role="alert"><h1>{terminal === 'deleted' ? 'Share deleted' : terminal === 'not_found' ? 'Share not found' : terminal === 'expired' ? 'This share has expired' : 'Service error'}</h1><p>{terminal === 'deleted' ? 'The share is no longer available.' : 'Could not load this share.'}</p><Link className="btn btn-primary" to="/">Create new share</Link></section></main>;
