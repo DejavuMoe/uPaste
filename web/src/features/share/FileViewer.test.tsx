@@ -4,13 +4,17 @@ import { FileViewer } from './FileViewer';
 import type { ShareMetadata } from '../../app/types';
 
 describe('FileViewer', () => {
+  // Relative so the rendered "in N days" copy never depends on the wall clock
+  // the suite happens to run at.
+  const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+
   const sampleShare: ShareMetadata = {
     id: 'file-share-123',
     payload_kind: 'FILE',
     privacy_mode: 'STANDARD',
     created_at: '2026-09-14T12:00:00Z',
     updated_at: '2026-09-14T12:00:00Z',
-    expires_at: '2026-09-20T12:00:00Z',
+    expires_at: expiresAt,
     file: {
       filename: 'financial-report.pdf',
       size: 14.2 * 1024 * 1024,
