@@ -200,6 +200,60 @@ func TestMigrateVersionThreeToCurrentPreservesTextPayloads(t *testing.T) {
 	}
 }
 
+// A database created by the last shipped schema version upgrades in place to
+// the current version without losing File metadata or payload invariants.
+func TestMigrateVersionFourToCurrentPreservesFilePayload(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(dataDir, filename)
+	db := openRaw(t, path)
+	for _, name := range []string{
+		"migrations/0001_shares.sql",
+		"migrations/0002_standard_text_payloads.sql",
+		"migrations/0003_encrypted_text_payloads.sql",
+		"migrations/0004_file_payloads.sql",
+	} {
+		sqlText, err := migrationFiles.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(sqlText)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("PRAGMA user_version = 4"); err != nil {
+		t.Fatal(err)
+	}
+	fileID := strings.Repeat("E", 22)
+	if err := insertMetadata(db, fileID, "FILE", "STANDARD", make([]byte, 32), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO file_payloads (share_id, storage_key, original_filename, size_bytes, detected_media_type, content_sha256) VALUES (?, ?, 'note.txt', 3, 'text/plain; charset=utf-8', ?)",
+		fileID, strings.Repeat("ab", 16), make([]byte, 32),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(context.Background(), dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	assertSchemaVersion(t, db, latestSchemaVersion)
+	var filenameValue string
+	var size int64
+	if err := db.QueryRow("SELECT original_filename, size_bytes FROM file_payloads WHERE share_id = ?", fileID).Scan(&filenameValue, &size); err != nil || filenameValue != "note.txt" || size != 3 {
+		t.Fatalf("File payload/error = %q/%d/%v", filenameValue, size, err)
+	}
+	var indexes int
+	if err := db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name IN ('shares_created_at_idx', 'shares_payload_privacy_created_idx')").Scan(&indexes); err != nil || indexes != 2 {
+		t.Fatalf("admin listing indexes/error = %d/%v", indexes, err)
+	}
+}
+
 func TestFailedMigrationDoesNotAdvanceVersion(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, filename)
