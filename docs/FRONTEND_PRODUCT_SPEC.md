@@ -43,7 +43,7 @@ The following routes are explicitly forbidden and must not be implemented:
 - `/feed` (no public listings)
 - `/search` (no content indexing or discovery)
 - `/account` / `/login` / `/register` (no user identity or authentication)
-- `/dashboard` / `/admin` (no administration panels)
+- `/dashboard` (no administration panels). Phase 11 later added one bounded Superadmin governance surface at `/admin`; it exists only when `UPASTE_ADMIN_TOKEN` is configured and is documented in [API.md](API.md), not in this frozen Phase 6 contract.
 
 ---
 
@@ -635,6 +635,8 @@ If the user modifies content in the editor and attempts internal navigation, pro
 ---
 
 ## 9. UI to API mapping matrix
+
+This matrix records the frozen Phase 6 intent for each user action. The implemented wire shapes are authoritative in [API.md](API.md) where they differ (for example `text: {format, content}`, `encrypted_text: {protocol, nonce, ciphertext}`, and the multipart `metadata` part).
 
 | User action | HTTP method | Endpoint | Headers | Request body | Success status | UI transition |
 |---|---|---|---|---|---|---|

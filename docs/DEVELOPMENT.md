@@ -20,7 +20,7 @@ pnpm is the only JavaScript package manager. Commit exactly `web/pnpm-lock.yaml`
 | `make test` | Run all Go/SQLite tests and frontend Vitest tests. |
 | `make build` | Full production build: TypeScript check, Vite build, clean embedding staging, then a single `-tags production` Go binary at `./upaste`. |
 | `make prove-embedded` | `make build`, then run the isolated-binary proof (binary alone, fresh data dir, no `web/dist`). |
-| `make e2e` | Existing 35-test Vite-backed real-browser suite. |
+| `make e2e` | Existing 35-test Vite-backed real-browser suite, including the 5-viewport × 2-theme visual qualification. |
 | `make prod-e2e` | Embedded-production real-browser suite against the built binary (no Vite), including the throttled slow-upload CSP/progress check. |
 | `make dist VERSION=v0.1.0` | Build deterministic `linux/amd64` and `linux/arm64` release archives plus `SHA256SUMS` under `release/`. |
 | `make verify-dist VERSION=v0.1.0` | Verify checksums, archive shape, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild. |
@@ -109,11 +109,16 @@ upaste-<version>-linux-<arch>/
 
 `SHA256SUMS` covers both archives. Archives normalize ordering, ownership,
 permissions, timestamps, and gzip headers, so the same inputs produce identical
-amd64 bytes. `scripts/verify-release.sh` (and `make verify-dist`) checks the
-checksums, archive shape, embedded version/commit strings, AArch64 ELF identity,
-amd64 `--version`, embedded frontend and health endpoint, API and File-origin
-create/download behavior, clean `SIGTERM` shutdown, restart persistence, and a
-deterministic amd64 rebuild. It creates no tag and no GitHub Release.
+bytes for both architectures. `scripts/verify-release.sh` (and
+`make verify-dist`) checks checksum coverage, the exact archive file set,
+shipped-file equality with the claimed commit, embedded version/commit strings,
+AArch64 ELF identity, amd64 `--version`, the embedded frontend with its asset
+cache policy and strict baseline CSP, and the health endpoint; it then proves
+private-mode API and File-origin create/download behavior with a clean
+`SIGTERM` shutdown and restart persistence, public-mode challenge verification
+with creation-anchored retention, Superadmin login/CSRF/delete governance, and
+deterministic rebuilds of both archives. It creates no tag and no GitHub
+Release.
 
 The release workflow at `.github/workflows/release.yml` is draft-only and
 triggers on `v*` tags or a manual dispatch. It validates tag/version/commit
@@ -168,7 +173,7 @@ Trusted proxy CIDRs are comma-separated and empty by default: forwarded headers 
 
 ## Database and migrations
 
-`internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; version 3 adds `encrypted_text_payloads`; version 4 adds `file_payloads` and File invariant triggers. Migrations 0001–0003 remain immutable. The application refuses a database newer than its supported schema. Database tests use `t.TempDir()` and require no external service.
+`internal/database/migrations/*.sql` is embedded into the binary. Migrations are forward-only, monotonically versioned, and use SQLite `PRAGMA user_version`; add a migration rather than editing an already released one. Schema version 2 adds `standard_text_payloads`; version 3 adds `encrypted_text_payloads`; version 4 adds `file_payloads` and File invariant triggers; version 5 adds the Superadmin listing indexes. Migrations 0001–0005 are immutable once shipped. The application refuses a database newer than its supported schema. Upgrade tests cover fresh setup, the 1→5, 2→5, 3→5, and 4→5 paths with data preservation, and failed-migration rollback; all use `t.TempDir()` and require no external service.
 
 The pool limit is four open and four idle connections. Write transactions acquire SQLite's immediate lock so concurrent read-then-write owner operations wait under the existing five-second busy timeout instead of failing with a stale deferred snapshot. The concurrency regression runs four updates and four independent creates together. Connection hardening and its tests are described in [ADR 0008](adr/0008-sqlite-driver.md).
 

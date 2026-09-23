@@ -73,7 +73,7 @@ Backups must capture the complete data tree (`upaste.db`, any SQLite side files,
 
 ## Pre-release qualification gate
 
-Before any real version tag, `make qualify-release VERSION=v0.0.0-test` must pass. It runs the full Go suite under the race detector, repeated stress on `share`, `database`, `maintenance`, `abuse`, `httpapi`, `fileapi`, and `objectstore`, deployment and systemd checks, deterministic amd64/arm64 package builds, packaged runtime verification, an automated cold backup/restore proof, and a shutdown-under-load restart proof. Ordinary CI runs the same qualification with a synthetic non-release version and never publishes.
+Before any real version tag, `make qualify-release VERSION=v0.0.0-test` must pass. It runs the full Go suite under the race detector, repeated stress on `share`, `database`, `maintenance`, `abuse`, `httpapi`, `fileapi`, and `objectstore`, deployment and systemd checks, deterministic amd64/arm64 package builds, packaged private- and public-mode runtime verification (shipped-file equality with the claimed commit, challenge verification, creation-anchored retention, Superadmin CSRF-governed deletion, restart persistence, and deterministic rebuilds), an automated cold backup/restore proof, and a shutdown-under-load restart proof. Ordinary CI runs the same qualification with a synthetic non-release version and never publishes. Packaging refuses a working tree with uncommitted tracked changes so an artifact cannot claim a commit it was not built from.
 
 Additional explicit local/pre-release checks:
 

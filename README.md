@@ -4,7 +4,7 @@ uPaste is a self-hosted application for sharing text and files. Security, reliab
 
 ## Current status
 
-Phase 11 is complete: uPaste supports a private backward-compatible mode and an Internet-facing public mode with challenge-gated anonymous creation, bounded retention, and a single Superadmin governance surface. No ordinary user accounts were introduced, and no version tag or GitHub Release has been created.
+Phases 1–12 are complete: uPaste supports a private backward-compatible mode and an Internet-facing public mode with challenge-gated anonymous creation, bounded retention, and a single Superadmin governance surface. Phase 12 closed the V1 release candidate by proving the packaged artifact's shipped-file integrity, private/public runtime contracts including Superadmin governance, and deterministic amd64/arm64 rebuilds. No ordinary user accounts were introduced, and no version tag or GitHub Release has been created.
 
 Implemented:
 
@@ -89,7 +89,7 @@ make dist VERSION=v0.1.0
 make verify-dist VERSION=v0.1.0
 ```
 
-`release/` receives `upaste-v0.1.0-linux-amd64.tar.gz`, `upaste-v0.1.0-linux-arm64.tar.gz`, and `SHA256SUMS`. Each archive contains `upaste`, `README.md`, `DEPLOYMENT.md`, `BUILDINFO` (version/commit/build date/Go/target), `upaste.service`, `upaste.env.example`, `nginx.conf.example`, and `Caddyfile.example`. Archives use normalized ownership, permissions, ordering, timestamps, and gzip headers; `make verify-dist` checks checksums, embedded metadata, AArch64 identity, amd64 standalone runtime and restart persistence, and a deterministic rebuild.
+`release/` receives `upaste-v0.1.0-linux-amd64.tar.gz`, `upaste-v0.1.0-linux-arm64.tar.gz`, and `SHA256SUMS`. Each archive contains `upaste`, `README.md`, `DEPLOYMENT.md`, `BUILDINFO` (version/commit/build date/Go/target), `upaste.service`, `upaste.env.example`, `nginx.conf.example`, and `Caddyfile.example`. Archives use normalized ownership, permissions, ordering, timestamps, and gzip headers; `make verify-dist` checks checksum coverage, the exact archive file set, that every shipped document and example equals the claimed commit, embedded metadata, AArch64 identity, private- and public-mode amd64 runtime behavior including Superadmin governance and creation-anchored retention, restart persistence, and deterministic rebuilds of both archives.
 
 A draft-only GitHub release workflow exists at `.github/workflows/release.yml` for future `v*` tags. It validates with least privilege, runs the complete pre-release gate on the tagged source, makes no release on manual dispatch, and creates or refreshes a draft only when triggered by a real `v*` tag. It was not triggered by this phase: no version tag and no GitHub Release were created.
 
@@ -115,7 +115,7 @@ Longer fuzz campaigns (`make fuzz`), machine-specific performance baselines (`ma
 10. Download and smoke-test the draft artifact.
 11. Publish the draft manually only after review.
 
-Phase 10 did not perform steps 1–11; they remain an explicit owner decision.
+No phase has performed steps 1–11; they remain an explicit owner decision.
 
 ## Public mode and Superadmin
 

@@ -1,6 +1,6 @@
 # ADR 0009: Embedded forward-only migrations
 
-- Status: Accepted; implemented through schema version 4
+- Status: Accepted; implemented through schema version 5
 - Date: 2026-09-14
 
 ## Context
@@ -9,7 +9,7 @@ The single-binary deployment must carry the exact schema history it understands.
 
 ## Decision
 
-Store monotonically numbered SQL files under `internal/database/migrations/` and embed them with `embed.FS`. Use SQLite `PRAGMA user_version` as the one integer schema marker: zero means uninitialized, version 1 means `0001_shares.sql` completed, version 2 adds `0002_standard_text_payloads.sql`, and version 3 adds `0003_encrypted_text_payloads.sql` with payload/privacy triggers, and version 4 adds `0004_file_payloads.sql` with File invariants.
+Store monotonically numbered SQL files under `internal/database/migrations/` and embed them with `embed.FS`. Use SQLite `PRAGMA user_version` as the one integer schema marker: zero means uninitialized, version 1 means `0001_shares.sql` completed, version 2 adds `0002_standard_text_payloads.sql`, version 3 adds `0003_encrypted_text_payloads.sql` with payload/privacy triggers, version 4 adds `0004_file_payloads.sql` with File invariants, and version 5 adds `0005_admin_listing_indexes.sql` with the Superadmin listing indexes.
 
 At startup, read the current version, refuse versions newer than the binary supports, and apply each missing migration in ascending order. Execute each migration and its `user_version` update in the same transaction. On statement or commit failure, return an error and do not advance the version. Reopening at the current version performs no migration work.
 
@@ -17,4 +17,4 @@ Migrations are forward-only. There are no down migrations, destructive resets, o
 
 ## Consequences
 
-The executable and schema history cannot drift during deployment, startup is sufficient to upgrade an older database, and `user_version` avoids a migration metadata table for this linear history. SQLite permits this DDL transactionally, and tests prove failed migration rollback, unchanged version, fresh 0→4 setup, safe 1→4, 2→4, and real 3→4 upgrades with Standard data preservation, and idempotent reopen. Rollback to older application binaries requires restoring a compatible operational backup rather than automated down SQL.
+The executable and schema history cannot drift during deployment, startup is sufficient to upgrade an older database, and `user_version` avoids a migration metadata table for this linear history. SQLite permits this DDL transactionally, and tests prove failed migration rollback, unchanged version, fresh setup to the current version, upgrades from versions 1, 2, 3, and 4 with payload/File data preservation, and idempotent reopen. Rollback to older application binaries requires restoring a compatible operational backup rather than automated down SQL.

@@ -32,6 +32,27 @@ Application errors use:
 
 API timestamps are RFC3339 UTC. Incoming timestamps accept RFC3339/RFC3339Nano and are normalized to UTC millisecond precision. Expiration is authoritative server time: `now >= expires_at` is expired and returns 410 without content. Expiration is synchronously authoritative for accessibility. Expired Shares cannot be read, updated, deleted, or revived through normal application operations. Phase 5 maintenance later physically purges expired metadata/payloads asynchronously. For expired File Shares, physical File-object cleanup remains subject to the existing maintenance/reconciliation rules.
 
+## Runtime configuration
+
+```http
+GET /api/v1/config
+```
+
+Unauthenticated and non-secret. Private mode returns:
+
+```json
+{"deployment_mode":"private","admin_enabled":false}
+```
+
+Public mode returns `deployment_mode: "public"`, `admin_enabled: true`, the
+configured `retention` object (`default_seconds`, `max_seconds`), and the
+non-secret `challenge` object (`provider`, `site_key`, plus Cap's `api_endpoint`
+or Turnstile's `hostname`). Challenge secrets, the Superadmin token, owner
+capabilities, and Share content are never included. The frontend uses this
+endpoint to enable challenge-aware creation and public retention limits; if it
+cannot be loaded, the frontend keeps private-mode defaults and surfaces the
+configuration error instead of assuming public policy.
+
 ## Rate limits
 
 Current self-hosted defaults use trusted-proxy-aware client IP identity: create 10/minute (burst 5), owner mutation 30/minute (burst 10), public reads 120/minute (burst 60), and a process-wide 1000/minute burst-200 limiter. File uploads/downloads also have non-blocking process-wide gates of 4/32. API limits return the normal `429 rate_limited` envelope and `Retry-After`; File-origin limits return plain-text 429 with the same header and File security headers. Limits are in-memory, reset on restart, and are not distributed or DDoS protection.
@@ -241,10 +262,32 @@ Authorization: Bearer <owner-token>
 
 An active authorized Share is physically removed and returns `204 No Content`. Standard or Encrypted payload is removed by foreign-key cascade. Later reads return 404, and a second delete returns 404. Expired Shares return 410 and are later purged asynchronously by maintenance. There is no soft delete or recycle bin.
 
+## Superadmin administration
+
+`/admin` and `/api/v1/admin/*` do not exist unless `UPASTE_ADMIN_TOKEN` is configured; without it they return 404. The single high-entropy `up_a1_` capability is exchanged for an in-memory session:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/admin/session` | `{"token":"up_a1_..."}`; sets a host-only HttpOnly `SameSite=Strict` session cookie (`Secure` in public mode) and returns `{"authenticated":true,"csrf":"...","expires_at":"..."}` |
+| `GET` | `/api/v1/admin/session` | Returns the current session and CSRF token, or 401 |
+| `DELETE` | `/api/v1/admin/session` | Ends the session; requires `X-uPaste-CSRF` |
+| `GET` | `/api/v1/admin/summary` | Aggregate counts: `active`, `expired`, `text`, `file`, `encrypted`, `file_bytes` |
+| `GET` | `/api/v1/admin/shares` | Metadata-only listing with `limit` (1–100, default 50), `kind`, `privacy`, `lifecycle` (`active`/`expired`), `sort` (`newest`/`oldest`), `id`, and `cursor`; returns `{"shares":[...],"next_cursor":"..."}` |
+| `GET` | `/api/v1/admin/shares/{id}` | On-demand detail: server-visible Text content, File metadata, or encrypted metadata only |
+| `DELETE` | `/api/v1/admin/shares/{id}` | Removes the Share and its payload; requires `X-uPaste-CSRF` |
+| `POST` | `/api/v1/admin/shares/bulk-delete` | `{"ids":[...]}` with 1–100 IDs; requires `X-uPaste-CSRF`; returns `{"deleted":n,"failed":[...]}` |
+| `POST` | `/api/v1/admin/cleanup/expired` | Runs the established expired purge/reconciliation pass; requires `X-uPaste-CSRF`; returns `{"purged":n}` |
+
+Listing rows contain `id`, `payload_kind`, `privacy_mode`, `state`, `created_at`, `updated_at`, `expires_at`, `payload_bytes`, and lightweight File metadata only. Detail responses never include storage keys, owner verifiers, or encryption keys; an Encrypted Share reports `protocol`, `nonce`, and `ciphertext_bytes` with a notice, never plaintext or ciphertext bytes. Superadmin cannot edit content, recover OwnerTokens, or decrypt encrypted Shares.
+
+Unauthenticated requests return 401 `unauthorized`; state-changing requests without a valid session-bound `X-uPaste-CSRF` header return 403 `csrf_failed`. Login attempts are rate limited per client identity and return 429 with `Retry-After`. Admin responses send `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`, and never add CORS headers.
+
 ## Methods
 
 - `/api/v1/shares`: `POST`
 - `/api/v1/shares/{id}`: `GET, PATCH, DELETE`
+- `/api/v1/config`: `GET`
+- `/api/v1/admin/*`: `GET, POST, DELETE` when `UPASTE_ADMIN_TOKEN` is configured, otherwise 404
 - `/raw/{id}`: `GET`
 - `/healthz`: `GET` lightweight liveness
 
