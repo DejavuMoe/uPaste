@@ -83,15 +83,26 @@ require_line "$env_example" '^# UPASTE_ADMIN_TOKEN='
 require_line "$env_example" '^# UPASTE_ADMIN_COOKIE_SECURE=true$'
 
 # Release workflow permissions and publication policy: validation is always
-# read-only, and only a real v* tag push may reach the draft release job.
+# read-only, and every publication primitive lives inside the tag-push-gated
+# draft job. The job block is extracted with awk so an unrelated job cannot
+# satisfy these assertions.
 require_line "$release_workflow" '^permissions:$'
 require_line "$release_workflow" '^  contents: read$'
 forbid_line "$release_workflow" '^  contents: write$'
-require_line "$release_workflow" "^ *if: github\\.event_name == 'push'$"
-require_line "$release_workflow" '^ *--draft'
-require_line "$release_workflow" '^ *gh release create '
-write_grants=$(grep -c '^      contents: write$' "$release_workflow")
-[[ "$write_grants" == "1" ]] || fail "$release_workflow must grant contents: write exactly once, found $write_grants"
+publish_block=$(awk '
+  /^  publish-draft:$/ { inside = 1 }
+  inside && /^  [A-Za-z0-9_-]+:$/ && !/^  publish-draft:$/ { exit }
+  inside { print }
+' "$release_workflow")
+[[ -n "$publish_block" ]] || fail "$release_workflow has no publish-draft job block"
+grep -q '^      contents: write$' <<<"$publish_block" || fail "publish-draft does not own the contents: write grant"
+grep -Eq "^ *if: github\\.event_name == 'push'$" <<<"$publish_block" || fail "publish-draft is not gated to tag pushes"
+grep -q '^ *--draft' <<<"$publish_block" || fail "publish-draft no longer creates a draft release"
+grep -q '^ *gh release create ' <<<"$publish_block" || fail "publish-draft no longer creates the release"
+for unique in '^      contents: write$' '^ *gh release create ' '^ *--draft'; do
+  unique_count=$(grep -cE "$unique" "$release_workflow")
+  [[ "$unique_count" == "1" ]] || fail "$release_workflow must contain $unique exactly once, found $unique_count"
+done
 
 # Nginx: two server names, two loopback upstreams, large body/timeouts, no CORS.
 require_line "$nginx" 'server_name paste\.example\.com;'
@@ -150,25 +161,66 @@ for invalid in 1.0.0 v01.0.0 v1.0 v1.0.0- v1.0.0_rc v1.0.0-rc..1; do
   fi
 done
 
-# Clean-tree guard contract: packaging refuses uncommitted tracked changes and
-# honors the explicit operator override.
+# Clean-source guard contract: modified tracked entries and untracked
+# non-ignored files are both build inputs and must be refused, while git-ignored
+# generated outputs and the explicit local override stay acceptable.
 guard_dir=$(mktemp -d)
-guard_log="$guard_dir/guard.log"
+guard_log=$(mktemp)
 if ! (
   cd "$guard_dir" || exit 1
   git init -q . &&
+    printf 'generated/\n' > .gitignore &&
     printf 'tracked\n' > tracked.txt &&
-    git add tracked.txt &&
+    git add .gitignore tracked.txt &&
     git -c user.email=check@example.invalid -c user.name=check -c commit.gpgsign=false commit -qm init &&
+    release_require_clean_tree &&
+    mkdir -p generated && printf 'output\n' > generated/output.bin &&
+    release_require_clean_tree &&
+    mkdir -p cmd/upaste && printf 'package main\n' > cmd/upaste/local_probe.go &&
+    ! ( release_require_clean_tree ) 2>/dev/null &&
+    RELEASE_ALLOW_DIRTY=1 release_require_clean_tree &&
+    rm -rf cmd &&
     release_require_clean_tree &&
     printf 'modified\n' >> tracked.txt &&
     ! ( release_require_clean_tree ) 2>/dev/null &&
-    RELEASE_ALLOW_DIRTY=1 release_require_clean_tree
+    printf 'tracked\n' > tracked.txt &&
+    release_require_clean_tree
 ) >"$guard_log" 2>&1; then
   cat "$guard_log" >&2
+  rm -f "$guard_log"
   rm -rf "$guard_dir"
-  fail "clean-tree packaging guard does not accept clean state or reject dirty tracked changes"
+  fail "clean-source guard does not reject untracked or modified inputs while accepting ignored outputs"
 fi
+rm -f "$guard_log"
 rm -rf "$guard_dir"
 
-echo "check-deployment: deployment examples, release workflow policy, clean-tree guard, systemd unit, and version parser validated"
+# COMMIT/HEAD provenance contract: the checked-out commit (or no COMMIT) is
+# accepted, a resolvable historical commit is refused, and an unresolvable
+# COMMIT is refused.
+commit_dir=$(mktemp -d)
+commit_log=$(mktemp)
+if ! (
+  cd "$commit_dir" || exit 1
+  git init -q . &&
+    printf 'one\n' > source.txt &&
+    git add source.txt &&
+    git -c user.email=check@example.invalid -c user.name=check -c commit.gpgsign=false commit -qm one &&
+    printf 'two\n' >> source.txt &&
+    git add source.txt &&
+    git -c user.email=check@example.invalid -c user.name=check -c commit.gpgsign=false commit -qm two &&
+    head=$(git rev-parse HEAD) &&
+    previous=$(git rev-parse HEAD^) &&
+    [[ "$(unset COMMIT; release_resolve_build_commit)" == "$head" ]] &&
+    [[ "$(COMMIT="$head" release_resolve_build_commit)" == "$head" ]] &&
+    ! ( COMMIT="$previous" release_resolve_build_commit ) 2>/dev/null &&
+    ! ( COMMIT=not-a-commit release_resolve_build_commit ) 2>/dev/null
+) >"$commit_log" 2>&1; then
+  cat "$commit_log" >&2
+  rm -f "$commit_log"
+  rm -rf "$commit_dir"
+  fail "release COMMIT resolution does not enforce the checked-out HEAD"
+fi
+rm -f "$commit_log"
+rm -rf "$commit_dir"
+
+echo "check-deployment: deployment examples, release workflow policy, source provenance guards, systemd unit, and version parser validated"

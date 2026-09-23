@@ -87,11 +87,18 @@ parsing. There is no HTTP version endpoint.
 
 `scripts/package-release.sh` is the canonical packaging implementation behind
 `make dist`. It validates `VERSION` as `vMAJOR.MINOR.PATCH` with optional
-prerelease/build suffixes, resolves the exact commit, derives
+prerelease/build suffixes, requires a clean source state (no modified tracked
+entries, no untracked non-ignored files; Git-ignored generated output such as
+`web/dist/`, `internal/webapp/dist/`, and `release/` stays acceptable), and
+requires `COMMIT`, when set, to equal the checked-out HEAD — packaging always
+builds the current checkout, so requesting a different historical commit fails
+closed instead of mislabeling the artifact. It then resolves the exact commit, derives
 `SOURCE_DATE_EPOCH` from that commit unless explicitly provided, builds the
 frontend once, stages the embedding directory, then cross-compiles `linux/amd64`
 and `linux/arm64` with `CGO_ENABLED=0`, `-tags production`, `-trimpath`, and
-deterministic metadata.
+deterministic metadata. `RELEASE_ALLOW_DIRTY=1` skips only the clean-source
+requirement for deliberate local experiments; CI and the release workflow never
+set it.
 
 Each archive has this shape:
 

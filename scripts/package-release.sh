@@ -20,12 +20,7 @@ fi
 
 command -v git >/dev/null 2>&1 || release_die "git is required to derive commit metadata"
 release_require_clean_tree
-if [[ -n "${COMMIT:-}" ]]; then
-  commit=$(git rev-parse --verify "${COMMIT}^{commit}") || release_die "COMMIT does not resolve to a commit: $COMMIT"
-else
-  commit=$(git rev-parse --verify "HEAD^{commit}") || release_die "cannot resolve HEAD to a commit"
-fi
-[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || release_die "resolved COMMIT is not a full lowercase Git SHA: $commit"
+commit=$(release_resolve_build_commit)
 
 if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
   epoch="$SOURCE_DATE_EPOCH"

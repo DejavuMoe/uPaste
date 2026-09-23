@@ -28,11 +28,9 @@ arm64_archive="$release_dir/upaste-${version}-linux-arm64.tar.gz"
 [[ -f "$arm64_archive" ]] || release_die "missing archive: $arm64_archive"
 [[ -f "$release_dir/SHA256SUMS" ]] || release_die "missing checksum file: $release_dir/SHA256SUMS"
 
-commit="${COMMIT:-}"
-if [[ -z "$commit" ]]; then
-  commit=$(cd "$root" && git rev-parse --verify "HEAD^{commit}") || release_die "cannot resolve HEAD commit"
-fi
-[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || release_die "COMMIT is not a full lowercase Git SHA: $commit"
+# The artifact is always built from the checked-out commit, so it is verified
+# against that same commit; a requested COMMIT that is not HEAD is refused.
+commit=$(cd "$root" && release_resolve_build_commit)
 
 work=$(mktemp -d)
 pid=""
