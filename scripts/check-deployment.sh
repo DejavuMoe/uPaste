@@ -30,8 +30,9 @@ service=deploy/systemd/upaste.service
 env_example=deploy/upaste.env.example
 nginx=deploy/nginx/upaste.conf.example
 caddy=deploy/caddy/Caddyfile.example
+release_workflow=.github/workflows/release.yml
 
-for file in "$service" "$env_example" "$nginx" "$caddy"; do
+for file in "$service" "$env_example" "$nginx" "$caddy" "$release_workflow"; do
   require_file "$file"
 done
 
@@ -65,6 +66,32 @@ forbid_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=.*0\.0\.0\.0/0'
 forbid_line "$env_example" '^UPASTE_TRUSTED_PROXY_CIDRS=.*::/0'
 forbid_line "$env_example" '^UPASTE_ADMIN_TOKEN=up_a1_[A-Za-z0-9_-]{43}$'
 forbid_line "$env_example" '^UPASTE_ADMIN_COOKIE_SECURE=false$'
+
+# The shipped environment example must keep documenting the complete public-mode
+# surface, otherwise an operator cannot configure the supported deployment.
+require_line "$env_example" '^# UPASTE_PUBLIC_DEFAULT_TTL='
+require_line "$env_example" '^# UPASTE_PUBLIC_MAX_TTL='
+require_line "$env_example" '^# UPASTE_CHALLENGE_PROVIDER=cap$'
+require_line "$env_example" '^# UPASTE_CAP_ENDPOINT='
+require_line "$env_example" '^# UPASTE_CAP_SITE_KEY='
+require_line "$env_example" '^# UPASTE_CAP_SECRET_KEY='
+require_line "$env_example" '^# UPASTE_CHALLENGE_PROVIDER=turnstile$'
+require_line "$env_example" '^# UPASTE_TURNSTILE_SITE_KEY='
+require_line "$env_example" '^# UPASTE_TURNSTILE_SECRET_KEY='
+require_line "$env_example" '^# UPASTE_TURNSTILE_HOSTNAME='
+require_line "$env_example" '^# UPASTE_ADMIN_TOKEN='
+require_line "$env_example" '^# UPASTE_ADMIN_COOKIE_SECURE=true$'
+
+# Release workflow permissions and publication policy: validation is always
+# read-only, and only a real v* tag push may reach the draft release job.
+require_line "$release_workflow" '^permissions:$'
+require_line "$release_workflow" '^  contents: read$'
+forbid_line "$release_workflow" '^  contents: write$'
+require_line "$release_workflow" "^ *if: github\\.event_name == 'push'$"
+require_line "$release_workflow" '^ *--draft'
+require_line "$release_workflow" '^ *gh release create '
+write_grants=$(grep -c '^      contents: write$' "$release_workflow")
+[[ "$write_grants" == "1" ]] || fail "$release_workflow must grant contents: write exactly once, found $write_grants"
 
 # Nginx: two server names, two loopback upstreams, large body/timeouts, no CORS.
 require_line "$nginx" 'server_name paste\.example\.com;'
@@ -123,4 +150,25 @@ for invalid in 1.0.0 v01.0.0 v1.0 v1.0.0- v1.0.0_rc v1.0.0-rc..1; do
   fi
 done
 
-echo "check-deployment: deployment examples, systemd unit, and version parser validated"
+# Clean-tree guard contract: packaging refuses uncommitted tracked changes and
+# honors the explicit operator override.
+guard_dir=$(mktemp -d)
+guard_log="$guard_dir/guard.log"
+if ! (
+  cd "$guard_dir" || exit 1
+  git init -q . &&
+    printf 'tracked\n' > tracked.txt &&
+    git add tracked.txt &&
+    git -c user.email=check@example.invalid -c user.name=check -c commit.gpgsign=false commit -qm init &&
+    release_require_clean_tree &&
+    printf 'modified\n' >> tracked.txt &&
+    ! ( release_require_clean_tree ) 2>/dev/null &&
+    RELEASE_ALLOW_DIRTY=1 release_require_clean_tree
+) >"$guard_log" 2>&1; then
+  cat "$guard_log" >&2
+  rm -rf "$guard_dir"
+  fail "clean-tree packaging guard does not accept clean state or reject dirty tracked changes"
+fi
+rm -rf "$guard_dir"
+
+echo "check-deployment: deployment examples, release workflow policy, clean-tree guard, systemd unit, and version parser validated"

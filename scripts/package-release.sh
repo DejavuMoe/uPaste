@@ -19,6 +19,7 @@ if [[ ! -f docs/DEPLOYMENT.md ]]; then
 fi
 
 command -v git >/dev/null 2>&1 || release_die "git is required to derive commit metadata"
+release_require_clean_tree
 if [[ -n "${COMMIT:-}" ]]; then
   commit=$(git rev-parse --verify "${COMMIT}^{commit}") || release_die "COMMIT does not resolve to a commit: $COMMIT"
 else
