@@ -50,7 +50,9 @@ describe('ShareRoute', () => {
     });
 
     expect(screen.getByText('Plain text')).toBeInTheDocument();
-    expect(document.title).toBe('Share · uPaste');
+    // document.title is applied by a passive effect, so it must be awaited
+    // rather than read immediately after the DOM assertion above.
+    await waitFor(() => expect(document.title).toBe('Share · uPaste'));
   });
 
   it('renders standard Markdown when text format is MARKDOWN', async () => {
@@ -75,7 +77,7 @@ describe('ShareRoute', () => {
       expect(screen.getByRole('heading', { level: 1, name: 'Markdown Document Title' })).toBeInTheDocument();
     });
 
-    expect(document.title).toBe('Share · uPaste');
+    await waitFor(() => expect(document.title).toBe('Share · uPaste'));
   });
 
   it('renders File viewer with filename in document title', async () => {
@@ -146,7 +148,7 @@ describe('ShareRoute', () => {
     expect(decryptSpy).toHaveBeenCalledWith(keyFragment, mockShare.encrypted_text);
     // Raw button must NOT exist
     expect(screen.queryByRole('link', { name: 'Raw' })).toBeNull();
-    expect(document.title).toBe('Share · uPaste');
+    await waitFor(() => expect(document.title).toBe('Share · uPaste'));
   });
 
   it('displays "Decryption key missing" if URL fragment is absent', async () => {
@@ -176,7 +178,7 @@ describe('ShareRoute', () => {
 
     expect(screen.getByText(/This encrypted share cannot be read without the complete link/)).toBeInTheDocument();
     expect(decryptSpy).not.toHaveBeenCalled();
-    expect(document.title).toBe('uPaste');
+    await waitFor(() => expect(document.title).toBe('uPaste'));
   });
 
   it('treats an empty hash as a missing key', async () => {
@@ -241,7 +243,7 @@ describe('ShareRoute', () => {
 
     // Error message must not display cryptographic details or stack traces
     expect(screen.queryByText(/operation-specific reason/i)).toBeNull();
-    expect(document.title).toBe('uPaste');
+    await waitFor(() => expect(document.title).toBe('uPaste'));
   });
 
   it('displays "Unable to decrypt this share" if ciphertext is tampered', async () => {
@@ -285,7 +287,7 @@ describe('ShareRoute', () => {
     await waitFor(() => {
       expect(screen.getByText('Share not found')).toBeInTheDocument();
     });
-    expect(document.title).toBe('uPaste');
+    await waitFor(() => expect(document.title).toBe('uPaste'));
   });
 
   it('handles 410 expired error', async () => {
@@ -298,7 +300,7 @@ describe('ShareRoute', () => {
     await waitFor(() => {
       expect(screen.getByText('This share has expired')).toBeInTheDocument();
     });
-    expect(document.title).toBe('uPaste');
+    await waitFor(() => expect(document.title).toBe('uPaste'));
   });
 
   it('handles 429 rate limited error', async () => {
@@ -312,7 +314,7 @@ describe('ShareRoute', () => {
       expect(screen.getByText('Too many requests')).toBeInTheDocument();
       expect(screen.getByText(/60 seconds/)).toBeInTheDocument();
     });
-    expect(document.title).toBe('uPaste');
+    await waitFor(() => expect(document.title).toBe('uPaste'));
   });
 
   it('aborts previous fetch on unmount', () => {
