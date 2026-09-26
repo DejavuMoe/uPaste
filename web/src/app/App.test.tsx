@@ -30,22 +30,24 @@ describe('App routing, titles, & security', () => {
     );
   };
 
-  it('renders CreatePage on root / route with title "New share · uPaste"', () => {
+  it('renders CreatePage on root / route in Chinese by default', () => {
     renderRoute('/');
 
-    expect(document.title).toBe('New share · uPaste');
-    expect(screen.getByRole('heading', { level: 1, name: /new share/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /text/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /file/i })).toBeInTheDocument();
+    expect(document.title).toBe('新建分享 · uPaste');
+    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(screen.getByRole('heading', { level: 1, name: '新建分享' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '文本' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '文件' })).toBeInTheDocument();
 
     // Text form is active by default
-    expect(screen.getByPlaceholderText(/paste or type content here/i)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '内容' })).toBeInTheDocument();
   });
 
   it('renders ShareRoute on /s/:id route with title "Share · uPaste"', () => {
     renderRoute('/s/test-share-id-123');
 
     expect(document.title).toBe('Share · uPaste');
+    expect(document.documentElement.lang).toBe('en');
     expect(screen.getByText('Loading share…')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'New share' })).toBeInTheDocument();
 

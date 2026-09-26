@@ -6,28 +6,37 @@ import { Button } from '../../components/Button';
 import { ExpirationField, type ExpirationValue } from '../../components/ExpirationField';
 import { ChallengeGate } from '../challenge/ChallengeGate';
 import { useDeploymentConfig } from '../../app/config';
+import { useLanguage, type Language } from '../../app/locale';
+import { createCopy } from './createCopy';
 
 export interface TextCreateSuccessData {
   shareId: string;
   ownerToken: string;
   encryptionKey?: string;
+  kind: 'text';
+  format: TextFormat;
+  privacy: PrivacyMode;
+  expiration: ExpirationValue['preset'];
 }
 
 export interface TextCreateFormProps {
   onSuccess: (data: TextCreateSuccessData) => void;
   onDirtyChange?: (isDirty: boolean) => void;
+  onByteCountChange?: (bytes: number) => void;
+  language?: Language;
 }
-
-const WARNING_BYTES_THRESHOLD = 943_718; // 90% of 1 MiB
 
 function formatByteCount(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;
   }
-  return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024).toFixed(1)} KiB`;
 }
 
-export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDirtyChange }) => {
+export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDirtyChange, onByteCountChange, language: languageProp }) => {
+  const currentLanguage = useLanguage().language;
+  const language = languageProp ?? currentLanguage;
+  const t = createCopy[language];
   const [format, setFormat] = useState<TextFormat>('PLAIN');
   const [privacy, setPrivacy] = useState<PrivacyMode>('STANDARD');
   const [content, setContent] = useState<string>('');
@@ -66,7 +75,6 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
   // UTF-8 byte calculation
   const byteLength = new TextEncoder().encode(content).byteLength;
   const isOverLimit = byteLength > MAX_CONTENT_BYTES;
-  const isNearLimit = byteLength >= WARNING_BYTES_THRESHOLD && !isOverLimit;
   const isEmpty = byteLength === 0;
   const hasExpirationError = !!expiration.error;
   const canSubmit = !isEmpty && !isOverLimit && !hasExpirationError && !isSubmitting && (!requiresChallenge || challengeToken !== null);
@@ -74,13 +82,14 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
   // Report dirty state whenever content byteLength changes
   useEffect(() => {
     onDirtyChange?.(byteLength > 0);
-  }, [byteLength, onDirtyChange]);
+    onByteCountChange?.(byteLength);
+  }, [byteLength, onDirtyChange, onByteCountChange]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || isSubmitting) return;
     if (requiresChallenge && !challengeToken) {
-      setErrorMessage('Complete the human verification challenge before creating a share.');
+      setErrorMessage(t.challenge);
       return;
     }
 
@@ -110,6 +119,7 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
         onSuccess({
           shareId: res.share.id,
           ownerToken: res.owner_token,
+          kind: 'text', format, privacy, expiration: expiration.preset,
         });
       } else {
         // Encrypted Text Flow:
@@ -137,6 +147,7 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
           shareId: res.share.id,
           ownerToken: res.owner_token,
           encryptionKey,
+          kind: 'text', format, privacy, expiration: expiration.preset,
         });
       }
     } catch (err: any) {
@@ -145,16 +156,14 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
 
       if (err instanceof ApiError) {
         if (err.status === 429 && err.retryAfterSeconds) {
-          setErrorMessage(
-            `Rate limit exceeded. Please wait ${err.retryAfterSeconds} seconds before trying again.`,
-          );
+          setErrorMessage(t.rateLimit(err.retryAfterSeconds));
         } else {
           setErrorMessage(err.message || `Error ${err.status}: ${err.code}`);
         }
       } else if (err instanceof Error) {
         setErrorMessage(err.message);
       } else {
-        setErrorMessage('An unexpected error occurred. Please try again.');
+        setErrorMessage(t.unexpected);
       }
     } finally {
       if (isMountedRef.current) {
@@ -170,147 +179,58 @@ export const TextCreateForm: React.FC<TextCreateFormProps> = ({ onSuccess, onDir
 
   return (
     <form className="create-form text-create-form" onSubmit={handleSubmit} noValidate>
-      <div className="form-toolbar">
-        <div className="toolbar-group">
-          {/* Format Selector */}
-          <div className="toolbar-item">
-            <span className="control-label" id="format-label">Format</span>
-            <div className="segmented-control" role="radiogroup" aria-labelledby="format-label">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={format === 'PLAIN'}
-                className={`segmented-button ${format === 'PLAIN' ? 'active' : ''}`}
-                onClick={() => setFormat('PLAIN')}
-                disabled={isSubmitting}
-              >
-                Plain text
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={format === 'SOURCE'}
-                className={`segmented-button ${format === 'SOURCE' ? 'active' : ''}`}
-                onClick={() => setFormat('SOURCE')}
-                disabled={isSubmitting}
-              >
-                Source
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={format === 'MARKDOWN'}
-                className={`segmented-button ${format === 'MARKDOWN' ? 'active' : ''}`}
-                onClick={() => setFormat('MARKDOWN')}
-                disabled={isSubmitting}
-              >
-                Markdown
-              </button>
-            </div>
-          </div>
-
-          {/* Privacy Selector */}
-          <div className="toolbar-item">
-            <span className="control-label" id="privacy-label">Privacy</span>
-            <div className="segmented-control" role="radiogroup" aria-labelledby="privacy-label">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={privacy === 'STANDARD'}
-                className={`segmented-button ${privacy === 'STANDARD' ? 'active' : ''}`}
-                onClick={() => setPrivacy('STANDARD')}
-                disabled={isSubmitting}
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={privacy === 'ENCRYPTED'}
-                className={`segmented-button ${privacy === 'ENCRYPTED' ? 'active' : ''}`}
-                onClick={() => setPrivacy('ENCRYPTED')}
-                disabled={isSubmitting}
-              >
-                Encrypted
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Expiration Selector */}
-        <div className="toolbar-item toolbar-expiration">
-          <span className="control-label" id="expiration-label">Expires</span>
-          <ExpirationField
-            value={expiration.preset}
-            onChange={setExpiration}
-            disabled={isSubmitting}
-            policy={expirationPolicy}
-          />
-        </div>
-      </div>
-
-      {privacy === 'ENCRYPTED' && (
-        <div className="privacy-notice" role="note">
-          Encrypted in this browser. Anyone with the complete link can read it. The server cannot
-          recover a lost decryption key.
-        </div>
-      )}
-
-      {errorMessage && (
-        <div className="form-error-banner" role="alert">
-          {errorMessage}
-        </div>
-      )}
-
-      {/* Editor Area */}
-      {requiresChallenge && challengeConfig && (
-        <ChallengeGate
-          challenge={challengeConfig}
-          onToken={setChallengeToken}
-          resetKey={challengeResetKey}
-        />
-      )}
-
-      <div className="editor-container">
-        <label htmlFor={editorId} className="sr-only">
-          Share text content
-        </label>
+      <div className="create-editor-area">
+        <label htmlFor={editorId} className="sr-only">{t.content}</label>
         <textarea
           id={editorId}
-          className={`editor-textarea ${format === 'SOURCE' ? 'font-mono' : 'font-sans'}`}
+          className={format === 'SOURCE' ? 'font-mono' : 'font-sans'}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Paste or type content here…"
+          onChange={(event) => setContent(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={t.placeholder}
           disabled={isSubmitting}
-          rows={16}
+          rows={10}
           spellCheck={format !== 'SOURCE'}
           aria-invalid={isOverLimit}
           aria-describedby="byte-counter"
         />
+      </div>
+      <span id="byte-counter" className="sr-only">
+        {formatByteCount(byteLength)} / 1 MiB
+        {isOverLimit && ` ${t.limitExceeded(byteLength - MAX_CONTENT_BYTES)}`}
+      </span>
 
-        <div className="editor-footer">
-          <div
-            id="byte-counter"
-            className={`byte-counter ${
-              isOverLimit ? 'counter-danger' : isNearLimit ? 'counter-warning' : ''
-            }`}
-            aria-live="polite"
-          >
-            {formatByteCount(byteLength)} / 1 MiB
-            {isOverLimit && (
-              <span className="counter-error-text"> (Limit exceeded by {byteLength - MAX_CONTENT_BYTES} bytes)</span>
-            )}
-          </div>
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!canSubmit}
-            loading={isSubmitting}
-          >
-            {isSubmitting ? 'Creating…' : 'Create share'}
-          </Button>
+      <div className="create-controls">
+        <div className="create-setting">
+          <label htmlFor="create-format">{t.format}</label>
+          <select id="create-format" className="form-select" value={format} disabled={isSubmitting} onChange={(event) => setFormat(event.target.value as TextFormat)}>
+            <option value="PLAIN">{t.plain}</option>
+            <option value="SOURCE">{t.source}</option>
+            <option value="MARKDOWN">{t.markdown}</option>
+          </select>
         </div>
+        <fieldset className="create-setting create-privacy">
+          <legend>{t.privacy}</legend>
+          <label><input type="radio" name="privacy" value="STANDARD" checked={privacy === 'STANDARD'} disabled={isSubmitting} onChange={() => setPrivacy('STANDARD')} />{t.standard}</label>
+          <label><input type="radio" name="privacy" value="ENCRYPTED" checked={privacy === 'ENCRYPTED'} disabled={isSubmitting} onChange={() => setPrivacy('ENCRYPTED')} />{t.encrypted}</label>
+        </fieldset>
+        <div className="create-setting">
+          <label htmlFor="create-expiration">{t.expires}</label>
+          <ExpirationField id="create-expiration" className="create-expiration" value={expiration.preset} onChange={setExpiration} disabled={isSubmitting} policy={expirationPolicy} language={language} />
+        </div>
+      </div>
+
+      {privacy === 'ENCRYPTED' && <p className="create-note" role="note">{t.encryptedNote}</p>}
+      {errorMessage && <p className="create-error" role="alert">{errorMessage}</p>}
+      {isOverLimit && <p className="create-error" role="alert">{t.limitExceeded(byteLength - MAX_CONTENT_BYTES)}</p>}
+      {requiresChallenge && challengeConfig && <ChallengeGate challenge={challengeConfig} onToken={setChallengeToken} resetKey={challengeResetKey} language={language} />}
+      <div className="create-submit">
+        <Button type="submit" variant="primary" disabled={!canSubmit} loading={isSubmitting}>{isSubmitting ? t.creating : t.create}</Button>
       </div>
     </form>
   );

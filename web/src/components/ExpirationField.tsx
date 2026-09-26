@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useId, useMemo } from 'react';
+import type { Language } from '../app/locale';
 
 export type ExpirationPreset = 'never' | '1h' | '1d' | '7d' | '30d' | 'custom';
 
@@ -22,6 +23,7 @@ export interface ExpirationFieldProps {
   disabled?: boolean;
   className?: string;
   policy?: ExpirationPolicy;
+  language?: Language;
 }
 
 const PRESETS: Array<{ preset: ExpirationPreset; label: string; seconds?: number }> = [
@@ -32,6 +34,10 @@ const PRESETS: Array<{ preset: ExpirationPreset; label: string; seconds?: number
   { preset: '30d', label: '30 days', seconds: 30 * 24 * 60 * 60 },
   { preset: 'custom', label: 'Custom…' },
 ];
+
+const zhPresetLabels: Record<ExpirationPreset, string> = {
+  never: '永久', '1h': '1 小时', '1d': '1 天', '7d': '7 天', '30d': '30 天', custom: '自定义…',
+};
 
 export function computeExpiresAt(preset: ExpirationPreset, customLocalValue?: string): string | null {
   const now = Date.now();
@@ -72,6 +78,7 @@ export const ExpirationField: React.FC<ExpirationFieldProps> = ({
   disabled = false,
   className = '',
   policy,
+  language = 'en',
 }) => {
   const generatedId = useId();
   const selectId = id || `exp-select-${generatedId}`;
@@ -150,11 +157,20 @@ export const ExpirationField: React.FC<ExpirationFieldProps> = ({
     }
   }, [preset, customValue, onChange, isPublic, maxSeconds]);
 
+  const localizedError = language === 'en' ? error
+    : error === 'Public Shares always expire.' ? '公开分享必须设置到期时间。'
+    : error === 'Please select a custom expiration date.' ? '请选择自定义到期时间。'
+    : error === 'Invalid date format.' ? '日期格式无效。'
+    : error === 'Expiration date must be in the future.' ? '到期时间必须晚于现在。'
+    : error?.startsWith('Expiration must be within ') && maxSeconds !== undefined
+      ? `到期时间必须在 ${Math.floor(maxSeconds / 3600)} 小时内。`
+      : error;
+
   return (
     <div className={`expiration-field ${className}`.trim()}>
       <div className="expiration-controls">
         <label htmlFor={selectId} className="sr-only">
-          Expiration
+          {language === 'zh' ? '到期' : 'Expiration'}
         </label>
         <select
           id={selectId}
@@ -162,11 +178,11 @@ export const ExpirationField: React.FC<ExpirationFieldProps> = ({
           value={preset}
           disabled={disabled}
           onChange={(event) => setPreset(event.target.value as ExpirationPreset)}
-          aria-label="Expiration"
+          aria-label={language === 'zh' ? '到期' : 'Expiration'}
         >
           {options.map((option) => (
             <option key={option.preset} value={option.preset}>
-              {option.label}
+              {language === 'zh' ? zhPresetLabels[option.preset] : option.label}
             </option>
           ))}
         </select>
@@ -174,7 +190,7 @@ export const ExpirationField: React.FC<ExpirationFieldProps> = ({
         {preset === 'custom' && (
           <div className="custom-datetime-container">
             <label htmlFor={customInputId} className="sr-only">
-              Custom expiration date and time
+              {language === 'zh' ? '自定义到期时间' : 'Custom expiration date and time'}
             </label>
             <input
               id={customInputId}
@@ -191,7 +207,7 @@ export const ExpirationField: React.FC<ExpirationFieldProps> = ({
       </div>
       {preset === 'custom' && error && (
         <div id={`${customInputId}-error`} className="form-error" role="alert">
-          {error}
+          {localizedError}
         </div>
       )}
     </div>

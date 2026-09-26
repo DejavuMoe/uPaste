@@ -9,6 +9,7 @@ test.afterEach(async () => { await new Promise(r => setTimeout(r, 6500)); });
 
 async function create(page: Page) {
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   await page.getByRole('tab', { name: 'File' }).click();
   const post = page.waitForRequest(r => r.method() === 'POST' && r.url().includes('/api/v1/shares'));
   const res = page.waitForResponse(r => r.request().method() === 'POST' && r.url().includes('/api/v1/shares'));

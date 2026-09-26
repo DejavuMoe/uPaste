@@ -10,9 +10,9 @@ describe('TextCreateForm', () => {
   });
 
   it('measures bytes using UTF-8 TextEncoder, not string length', () => {
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     // "Hello 🌍" is 7 chars in JS (or 8 with surrogate), but UTF-8 is:
     // 'Hello ' (6 bytes) + '🌍' (4 bytes) = 10 bytes
     fireEvent.change(textarea, { target: { value: 'Hello 🌍' } });
@@ -22,9 +22,9 @@ describe('TextCreateForm', () => {
   });
 
   it('correctly counts multi-byte CJK characters as UTF-8 bytes', () => {
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     // "你好世界" is 4 characters, 3 bytes each = 12 bytes
     fireEvent.change(textarea, { target: { value: '你好世界' } });
 
@@ -32,12 +32,12 @@ describe('TextCreateForm', () => {
   });
 
   it('disables submit button when content is empty', () => {
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
     expect(submitBtn).toBeDisabled();
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: 'non-empty' } });
 
     expect(submitBtn).not.toBeDisabled();
@@ -56,9 +56,9 @@ describe('TextCreateForm', () => {
       owner_token: 'up_o1_tok',
     });
 
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: '   \n\t  ' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
@@ -72,8 +72,8 @@ describe('TextCreateForm', () => {
   });
 
   it('accepts exactly 1,048,576 UTF-8 bytes and rejects 1,048,577 bytes', () => {
-    render(<TextCreateForm onSuccess={vi.fn()} />);
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     const submitBtn = screen.getByRole('button', { name: /create share/i });
 
     // Exactly 1 MiB (1,048,576 bytes)
@@ -88,11 +88,11 @@ describe('TextCreateForm', () => {
     fireEvent.change(textarea, { target: { value: overLimitContent } });
 
     expect(submitBtn).toBeDisabled();
-    expect(screen.getByText(/Limit exceeded by 1 bytes/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Limit exceeded by 1 bytes/);
   });
 
   it('renders visible labels for Format, Privacy, and Expires', () => {
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
     expect(screen.getByText('Format')).toBeInTheDocument();
     expect(screen.getByText('Privacy')).toBeInTheDocument();
@@ -113,13 +113,12 @@ describe('TextCreateForm', () => {
       owner_token: 'up_o1_tok123',
     });
 
-    render(<TextCreateForm onSuccess={onSuccess} />);
+    render(<TextCreateForm language="en" onSuccess={onSuccess} />);
 
     // Switch format to Source
-    const sourceBtn = screen.getByRole('radio', { name: /source/i });
-    fireEvent.click(sourceBtn);
+    fireEvent.change(screen.getByLabelText('Format'), { target: { value: 'SOURCE' } });
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: 'const x = 42;' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
@@ -140,10 +139,13 @@ describe('TextCreateForm', () => {
       );
     });
 
-    expect(onSuccess).toHaveBeenCalledWith({
+    expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({
       shareId: 'share-std-123',
       ownerToken: 'up_o1_tok123',
-    });
+      kind: 'text',
+      format: 'SOURCE',
+      privacy: 'STANDARD',
+    }));
   });
 
   it('submits Encrypted Text without sending plaintext or key to server', async () => {
@@ -160,7 +162,7 @@ describe('TextCreateForm', () => {
       owner_token: 'up_o1_enctok456',
     });
 
-    render(<TextCreateForm onSuccess={onSuccess} />);
+    render(<TextCreateForm language="en" onSuccess={onSuccess} />);
 
     // Switch to Encrypted
     const encryptedRadio = screen.getByRole('radio', { name: /encrypted/i });
@@ -169,7 +171,7 @@ describe('TextCreateForm', () => {
     // Verify privacy notice is displayed
     expect(screen.getByRole('note')).toHaveTextContent(/encrypted in this browser/i);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: 'super secret text' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
@@ -207,9 +209,9 @@ describe('TextCreateForm', () => {
       new api.ApiError(429, 'rate_limit_exceeded', 'Rate limit exceeded', 30),
     );
 
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: 'my important draft' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
@@ -235,9 +237,9 @@ describe('TextCreateForm', () => {
 
     const createSpy = vi.spyOn(api, 'createStandardText').mockImplementation(() => pendingPromise as any);
 
-    render(<TextCreateForm onSuccess={vi.fn()} />);
+    render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: 'single submission test' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });
@@ -271,9 +273,9 @@ describe('TextCreateForm', () => {
       return new Promise(() => {});
     });
 
-    const { unmount } = render(<TextCreateForm onSuccess={vi.fn()} />);
+    const { unmount } = render(<TextCreateForm language="en" onSuccess={vi.fn()} />);
 
-    const textarea = screen.getByPlaceholderText(/paste or type content here/i);
+    const textarea = screen.getByRole('textbox', { name: 'Content' });
     fireEvent.change(textarea, { target: { value: 'unmount test' } });
 
     const submitBtn = screen.getByRole('button', { name: /create share/i });

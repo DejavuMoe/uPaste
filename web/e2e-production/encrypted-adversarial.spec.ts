@@ -14,11 +14,12 @@ interface EncryptedShare {
 
 async function createEncrypted(page: Page, format: 'PLAIN' | 'MARKDOWN', content: string): Promise<EncryptedShare> {
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   if (format === 'MARKDOWN') {
-    await page.getByRole('radio', { name: 'Markdown', exact: true }).click();
+    await page.getByLabel('Format').selectOption('MARKDOWN');
   }
   await page.getByRole('radio', { name: 'Encrypted', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Share text content' }).fill(content);
+  await page.getByRole('textbox', { name: 'Content' }).fill(content);
   const response = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().includes('/api/v1/shares'),
   );

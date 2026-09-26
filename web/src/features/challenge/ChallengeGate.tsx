@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import capWasmUrl from '@cap.js/wasm/browser/cap_wasm_bg.wasm?url';
 import type { PublicChallengeConfig } from '../../app/config';
+import type { Language } from '../../app/locale';
 
 export type ChallengeStatus = 'loading' | 'ready' | 'verifying' | 'verified' | 'expired' | 'error';
 
@@ -9,6 +10,7 @@ export interface ChallengeGateProps {
   onToken: (token: string | null) => void;
   onStatus?: (status: ChallengeStatus) => void;
   resetKey?: number;
+  language?: Language;
 }
 
 declare global {
@@ -51,7 +53,16 @@ const statusLabels: Record<ChallengeStatus, string> = {
   error: 'Temporary verification failure — try again',
 };
 
-export const ChallengeGate: React.FC<ChallengeGateProps> = ({ challenge, onToken, onStatus, resetKey = 0 }) => {
+const zhStatusLabels: Record<ChallengeStatus, string> = {
+  loading: '正在加载验证…',
+  ready: '需要完成人机验证',
+  verifying: '正在验证…',
+  verified: '已验证',
+  expired: '验证已过期，请重新完成',
+  error: '验证暂时失败，请重试',
+};
+
+export const ChallengeGate: React.FC<ChallengeGateProps> = ({ challenge, onToken, onStatus, resetKey = 0, language = 'en' }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cleanupRef = useRef<() => void>(() => {});
   const [status, setStatus] = useState<ChallengeStatus>('loading');
@@ -158,10 +169,10 @@ export const ChallengeGate: React.FC<ChallengeGateProps> = ({ challenge, onToken
   }, [challenge.provider, challenge.site_key, challenge.api_endpoint, resetKey]);
 
   return (
-    <div className="challenge-gate" role="group" aria-label="Human verification">
+    <div className="challenge-gate" role="group" aria-label={language === 'zh' ? '人机验证' : 'Human verification'}>
       <div ref={containerRef} className="challenge-widget" />
       <p className="challenge-status" role="status" aria-live="polite">
-        {statusLabels[status]}
+        {language === 'zh' ? zhStatusLabels[status] : statusLabels[status]}
       </p>
     </div>
   );

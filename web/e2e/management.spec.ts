@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 test.afterEach(async () => { await new Promise((resolve) => setTimeout(resolve, 6500)); });
 
 async function createStandard(page: import('@playwright/test').Page, content = 'e2e original') {
-  await page.goto('/'); const response = page.waitForResponse((r) => r.url().includes('/api/v1/shares') && r.request().method() === 'POST');
-  await page.getByRole('textbox', { name: 'Share text content' }).fill(content); await page.getByRole('button', { name: 'Create share' }).click();
+  await page.goto('/'); await page.getByRole('button', { name: 'EN' }).click(); const response = page.waitForResponse((r) => r.url().includes('/api/v1/shares') && r.request().method() === 'POST');
+  await page.getByRole('textbox', { name: 'Content' }).fill(content); await page.getByRole('button', { name: 'Create share' }).click();
   const payload = await (await response).json(); await expect(page.getByText('Share created')).toBeVisible(); return { id: payload.share.id as string, token: payload.owner_token as string };
 }
 async function manage(page: import('@playwright/test').Page) { await page.getByRole('button', { name: 'Manage share' }).click(); await expect(page.getByLabel('Editor')).toBeVisible(); }
@@ -19,6 +19,31 @@ test('explicit Never is a null-only mutation', async ({ page }) => { await creat
 test('wrong owner token retains draft for retry', async ({ page }) => { const { token } = await createStandard(page); const wrong = token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A'); await manage(page); await page.reload(); await page.getByLabel('Management token').fill(wrong); await page.getByRole('button', { name: 'Continue' }).click(); await page.getByLabel('Editor').fill('unsaved 401 draft'); const rejected = page.waitForResponse((r) => r.request().method() === 'PATCH'); await page.getByRole('button', { name: 'Save changes' }).click(); expect((await rejected).status()).toBe(401); await expect(page.getByText(/Management token was not accepted/)).toBeVisible(); expect(await surfaces(page)).not.toContain(wrong); await page.getByLabel('Management token').fill(token); await page.getByRole('button', { name: 'Continue' }).click(); await expect(page.getByLabel('Editor')).toHaveValue('unsaved 401 draft'); const saved = page.waitForResponse((r) => r.request().method() === 'PATCH'); await page.getByRole('button', { name: 'Save changes' }).click(); expect((await saved).status()).toBe(200); await expect(page.getByText('Changes saved')).toBeVisible(); expect(await surfaces(page)).not.toContain(token); await page.getByRole('button', { name: 'Cancel' }).click(); await expect(page.getByText('unsaved 401 draft')).toBeVisible(); });
 test('dirty header navigation can keep then discard', async ({ page }) => { await createStandard(page); await manage(page); await page.getByLabel('Editor').fill('draft'); await page.getByRole('link', { name: 'uPaste' }).click(); await page.getByRole('button', { name: 'Keep editing' }).click(); await expect(page.getByLabel('Editor')).toHaveValue('draft'); await page.getByRole('link', { name: 'uPaste' }).click(); await page.getByRole('button', { name: 'Discard and leave' }).click(); await expect(page.getByRole('heading', { name: 'New share' })).toBeVisible(); });
 test('dirty Back navigation is blocked', async ({ page }) => { await createStandard(page); await manage(page); await page.getByLabel('Editor').fill('draft'); await page.goBack(); await expect(page.getByRole('dialog', { name: 'You have unsaved changes.' })).toBeVisible(); await page.getByRole('button', { name: 'Keep editing' }).click(); await expect(page.getByLabel('Editor')).toHaveValue('draft'); });
+test('dirty create Back navigation preserves drafts until confirmed', async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') browserErrors.push(message.text()); });
+  await createStandard(page);
+  await page.getByRole('button', { name: 'Open share' }).click();
+  await page.getByRole('link', { name: 'New share' }).click();
+  await expect(page).toHaveTitle('New share · uPaste');
+  await page.getByLabel('Content', { exact: true }).fill('unsaved text');
+  await page.getByRole('tab', { name: 'File' }).click();
+  await page.locator('input[type=file]').setInputFiles({ name: 'draft.txt', mimeType: 'text/plain', buffer: Buffer.from('draft') });
+
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'You have unsaved changes.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(page.getByRole('tab', { name: 'File' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText('draft.txt')).toBeVisible();
+  await page.getByRole('tab', { name: 'Text' }).click();
+  await expect(page.getByLabel('Content', { exact: true })).toHaveValue('unsaved text');
+
+  await page.goBack();
+  await page.getByRole('button', { name: 'Discard and leave' }).click();
+  await expect(page.getByText('e2e original')).toBeVisible();
+  expect(browserErrors).toEqual([]);
+});
 test('delete dialog keyboard isolation works', async ({ page }) => { await createStandard(page); await manage(page); await page.getByRole('button', { name: 'Delete share' }).click(); const d = page.getByRole('dialog', { name: 'Delete this share?' }); await expect(d).toHaveAttribute('aria-modal', 'true'); const cancel = page.getByRole('button', { name: 'Cancel' }).last(), destroy = page.getByRole('button', { name: 'Delete permanently' }); await expect(cancel).toBeFocused(); await expect(destroy).not.toBeFocused(); expect(await page.evaluate(() => ({ inert: document.getElementById('root')?.inert, hidden: document.getElementById('root')?.getAttribute('aria-hidden') }))).toEqual({ inert: true, hidden: 'true' }); await destroy.focus(); await page.keyboard.press('Tab'); await expect(cancel).toBeFocused(); await page.keyboard.press('Shift+Tab'); await expect(destroy).toBeFocused(); await page.keyboard.press('Escape'); await expect(d).toBeHidden(); await expect(page.getByRole('button', { name: 'Delete share' })).toBeFocused(); expect(await page.evaluate(() => ({ inert: document.getElementById('root')?.inert, hidden: document.getElementById('root')?.getAttribute('aria-hidden') }))).not.toEqual({ inert: true, hidden: 'true' }); });
 test('delete cancel then confirms backend 404', async ({ page, request }) => { const { id } = await createStandard(page); await manage(page); await page.getByRole('button', { name: 'Delete share' }).click(); await page.getByRole('button', { name: 'Cancel' }).last().click(); await page.getByRole('button', { name: 'Delete share' }).click(); await page.getByRole('button', { name: 'Delete permanently' }).click(); await expect(page.getByText('Share deleted')).toBeVisible(); expect((await request.get(`http://127.0.0.1:4180/api/v1/shares/${id}`)).status()).toBe(404); });
 test('storage remains confidential', async ({ page }) => { const { token } = await createStandard(page); await manage(page); const s = await page.evaluate(() => JSON.stringify({ local: localStorage, session: sessionStorage, cookie: document.cookie, state: history.state })); expect(s).not.toContain(token); expect(s).not.toContain('e2e original'); });

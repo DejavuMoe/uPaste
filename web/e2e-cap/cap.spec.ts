@@ -38,6 +38,7 @@ test('real pinned Cap widget solves against the local mock and creation succeeds
   });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   const textPanel = page.getByRole('tabpanel', { name: 'Text' });
   await expect(textPanel.getByRole('group', { name: 'Human verification' })).toBeVisible();
   await expect(textPanel.getByText('Verified')).toBeVisible({ timeout: 30_000 });
@@ -52,7 +53,7 @@ test('real pinned Cap widget solves against the local mock and creation succeeds
   expect(config.challenge.site_key).toBe('test-cap-site');
   expect(JSON.stringify(config)).not.toContain('test-secret');
 
-  await textPanel.getByRole('textbox', { name: 'Share text content' }).fill('cap browser content');
+  await textPanel.getByRole('textbox', { name: 'Content' }).fill('cap browser content');
   const createRequest = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/api/v1/shares'));
   const createResponse = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/api/v1/shares'));
   await textPanel.getByRole('button', { name: 'Create share' }).click();
@@ -80,9 +81,10 @@ test('real pinned Cap widget solves against the local mock and creation succeeds
 test('admin inspects and deletes a Cap-created Share', async ({ page, request }) => {
   const content = 'admin governance text';
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   const textPanel = page.getByRole('tabpanel', { name: 'Text' });
   await expect(textPanel.getByText('Verified')).toBeVisible({ timeout: 30_000 });
-  await textPanel.getByRole('textbox', { name: 'Share text content' }).fill(content);
+  await textPanel.getByRole('textbox', { name: 'Content' }).fill(content);
   const createResponse = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/api/v1/shares'));
   await textPanel.getByRole('button', { name: 'Create share' }).click();
   const created = await (await createResponse).json();

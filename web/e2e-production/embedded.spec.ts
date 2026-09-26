@@ -43,7 +43,7 @@ test('embedded index and hashed assets load with strict production headers', asy
   expect(csp).not.toContain('unsafe-inline');
   expect(csp).not.toContain('*');
 
-  await expect(page.getByRole('heading', { name: 'New share' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '新建分享' })).toBeVisible();
 
   const scriptSrc = await page.locator('script[src^="/assets/"]').first().getAttribute('src');
   const cssHref = await page.locator('link[rel="stylesheet"][href^="/assets/"]').first().getAttribute('href');
@@ -93,7 +93,8 @@ test('standard text create, viewer, and owner management work from the embedded 
   const violations = collectCspViolations(page);
 
   await page.goto('/');
-  await page.getByRole('textbox', { name: 'Share text content' }).fill(secret);
+  await page.getByRole('button', { name: 'EN' }).click();
+  await page.getByRole('textbox', { name: 'Content' }).fill(secret);
   const createResponse = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().includes('/api/v1/shares'),
   );
@@ -125,6 +126,7 @@ test('file shares download only from the separate file origin', async ({ page, r
   const bytes = Buffer.from('embedded production file body');
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   await page.getByRole('tab', { name: 'File' }).click();
   await page.locator('input[type=file]').setInputFiles({
     name: 'embedded-production.txt',
@@ -157,8 +159,9 @@ test('encrypted text is encrypted and decrypted in the browser on the embedded o
   const content = 'embedded encrypted secret';
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   await page.getByRole('radio', { name: 'Encrypted', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Share text content' }).fill(content);
+  await page.getByRole('textbox', { name: 'Content' }).fill(content);
   const createResponse = page.waitForResponse(
     (response) => response.request().method() === 'POST' && response.url().includes('/api/v1/shares'),
   );

@@ -10,16 +10,16 @@ describe('FileCreateForm', () => {
   });
 
   it('renders initial dropzone with 64 MiB limit notice', () => {
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     expect(screen.getByText(/drop one file here/i)).toBeInTheDocument();
-    expect(screen.getByText(/maximum size: 64 mib/i)).toBeInTheDocument();
+    expect(screen.getByText(/one file, up to 64 mib/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create share/i })).toBeDisabled();
   });
 
   it('rejects zero-byte files immediately upon selection', () => {
     const createFileSpy = vi.spyOn(api, 'createFile');
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const emptyFile = new File([], 'empty.txt', { type: 'text/plain' });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -34,7 +34,7 @@ describe('FileCreateForm', () => {
   });
 
   it('rejects files larger than 64 MiB immediately upon selection', () => {
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     // 64 MiB + 1 byte
     const oversizedFile = new File([''], 'huge.bin');
@@ -49,7 +49,7 @@ describe('FileCreateForm', () => {
   });
 
   it('handles multi-file drop by selecting only first file and displaying notice', () => {
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const file1 = new File(['first content'], 'first.txt', { type: 'text/plain' });
     const file2 = new File(['second content'], 'second.txt', { type: 'text/plain' });
@@ -77,7 +77,7 @@ describe('FileCreateForm', () => {
   });
 
   it('accepts valid file <= 64 MiB and collapses into file row', () => {
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const validFile = new File(['sample test file content'], 'report.pdf', {
       type: 'application/pdf',
@@ -96,7 +96,7 @@ describe('FileCreateForm', () => {
   });
 
   it('removes file when clicking Remove and restores dropzone', () => {
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const validFile = new File(['content'], 'test.txt');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -122,7 +122,7 @@ describe('FileCreateForm', () => {
       return new Promise(() => {});
     });
 
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const validFile = new File(['file data'], 'doc.pdf');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -163,7 +163,7 @@ describe('FileCreateForm', () => {
         };
       });
 
-    render(<FileCreateForm onSuccess={onSuccess} />);
+    render(<FileCreateForm language="en" onSuccess={onSuccess} />);
 
     const validFile = new File(['file data'], 'doc.pdf');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -181,10 +181,12 @@ describe('FileCreateForm', () => {
       );
     });
 
-    expect(onSuccess).toHaveBeenCalledWith({
+    expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({
       shareId: 'file-share-999',
       ownerToken: 'up_o1_filetok999',
-    });
+      kind: 'file',
+      privacy: 'STANDARD',
+    }));
   });
 
   it('aborts active upload when component unmounts', () => {
@@ -194,7 +196,7 @@ describe('FileCreateForm', () => {
       return new Promise(() => {});
     });
 
-    const { unmount } = render(<FileCreateForm onSuccess={vi.fn()} />);
+    const { unmount } = render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const validFile = new File(['file data'], 'doc.pdf');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -216,7 +218,7 @@ describe('FileCreateForm', () => {
       new api.ApiError(500, 'server_error', 'Upload failed'),
     );
 
-    render(<FileCreateForm onSuccess={vi.fn()} />);
+    render(<FileCreateForm language="en" onSuccess={vi.fn()} />);
 
     const validFile = new File(['file data'], 'doc.pdf');
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;

@@ -18,6 +18,7 @@ test('slow upload advances progress without weakening strict CSP', async ({ page
   });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   await expect(page.getByRole('heading', { name: 'New share' })).toBeVisible();
 
   const client = await context.newCDPSession(page);

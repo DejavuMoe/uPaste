@@ -23,9 +23,10 @@ for (const [width, height] of sizes) for (const theme of ['light', 'dark']) {
     };
     const create = async (format: string, encrypted = false) => {
       await page.goto('/');
-      await page.getByRole('radio', { name: format, exact: true }).click();
+      await page.getByRole('button', { name: 'EN' }).click();
+      await page.getByLabel('Format').selectOption(format === 'Plain text' ? 'PLAIN' : format === 'Source' ? 'SOURCE' : 'MARKDOWN');
       if (encrypted) await page.getByRole('radio', { name: 'Encrypted', exact: true }).click();
-      await page.getByLabel('Share text content').fill(format === 'Markdown' ? markdown : format === 'Source' ? source : unicode + 'token'.repeat(100));
+      await page.getByLabel('Content', { exact: true }).fill(format === 'Markdown' ? markdown : format === 'Source' ? source : unicode + 'token'.repeat(100));
       await check(encrypted ? 'encrypted-create' : `create-${format}`);
       const response = page.waitForResponse(r => r.request().method() === 'POST' && r.url().includes('/api/v1/shares'));
       await page.getByRole('button', { name: 'Create share', exact: true }).click();
@@ -37,21 +38,27 @@ for (const [width, height] of sizes) for (const theme of ['light', 'dark']) {
       return data;
     };
     await page.goto('/');
-    await page.getByLabel('Color theme').selectOption(theme);
-    await page.getByLabel('Color theme').focus();
-    await expect(page.getByLabel('Color theme')).toBeFocused();
+    await expect(page.getByRole('heading', { name: '新建分享' })).toBeVisible();
+    await page.getByLabel('外观').selectOption(theme);
+    if (process.env.UPASTE_QA_SCREENSHOTS) {
+      await mkdir('/tmp/upaste-visual-qa', { recursive: true });
+      await page.screenshot({ path: `/tmp/upaste-visual-qa/${width}-${theme}-create-zh.png`, fullPage: true });
+    }
+    await page.getByRole('button', { name: 'EN' }).click();
+    await page.getByLabel('Theme').focus();
+    await expect(page.getByLabel('Theme')).toBeFocused();
     await check('create');
-    await page.getByLabel('Share text content').focus();
+    await page.getByLabel('Content', { exact: true }).focus();
     await page.keyboard.press('Tab');
-    await expect(page.getByLabel('Share text content')).not.toBeFocused();
-    await page.getByLabel('Share text content').fill('x'.repeat(1_048_570));
-    await page.getByLabel('Share text content').focus();
-    expect(await page.getByLabel('Share text content').evaluate(e => getComputedStyle(e).outlineStyle)).not.toBe('none');
+    await expect(page.getByLabel('Content', { exact: true })).not.toBeFocused();
+    await page.getByLabel('Content', { exact: true }).fill('x'.repeat(1_048_570));
+    await page.getByLabel('Content', { exact: true }).focus();
+    expect(await page.getByLabel('Content', { exact: true }).evaluate(e => getComputedStyle(e).outlineStyle)).not.toBe('none');
     await check('near-limit');
-    await page.getByLabel('Share text content').fill('x'.repeat(1_048_577));
+    await page.getByLabel('Content', { exact: true }).fill('x'.repeat(1_048_577));
     await expect(page.getByRole('button', { name: 'Create share', exact: true })).toBeDisabled();
     await check('over-limit');
-    await page.getByLabel('Share text content').fill('');
+    await page.getByLabel('Content', { exact: true }).fill('');
     await create('Plain text');
     await page.getByRole('button', { name: 'Manage share', exact: true }).click();
     await expect(page.getByLabel('Editor')).toBeVisible();
@@ -137,6 +144,7 @@ for (const [width, height] of sizes) for (const theme of ['light', 'dark']) {
     }
     await page.waitForTimeout(6500);
     await page.goto('/');
+    await page.getByRole('button', { name: 'EN' }).click();
     await page.getByRole('tab', { name: 'File', exact: true }).click();
     await check('file-empty');
     await page.locator('input[type=file]').setInputFiles({ name: longName, mimeType: 'image/png', buffer: Buffer.from([137,80,78,71,13,10,26,10,1,2]) });
@@ -154,6 +162,7 @@ for (const [width, height] of sizes) for (const theme of ['light', 'dark']) {
     await check('file-viewer');
     await page.waitForTimeout(6500);
     await page.goto('/');
+    await page.getByRole('button', { name: 'EN' }).click();
     await page.getByRole('tab', { name: 'File', exact: true }).click();
     await page.locator('input[type=file]').setInputFiles({ name: 'small.txt', mimeType: 'text/plain', buffer: Buffer.from('small file') });
     await page.getByRole('button', { name: 'Create share', exact: true }).click();

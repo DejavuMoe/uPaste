@@ -1,0 +1,36 @@
+import type { Language } from '../../app/locale';
+
+export const createCopy = {
+  zh: {
+    newShare: '新建分享', created: '分享已创建', text: '文本', file: '文件', content: '内容', contentType: '内容类型',
+    format: '格式', plain: '纯文本', source: '源码', markdown: 'Markdown', privacy: '隐私', standard: '标准', encrypted: '加密', expires: '到期',
+    placeholder: '粘贴或输入内容…', dropFile: '拖入一个文件', chooseFile: '选择文件', fileLimit: '单个文件，最大 64 MiB', remove: '移除',
+    create: '创建分享', creating: '正在创建…', preparing: '正在准备…', uploading: '正在上传…',
+    encryptedNote: '内容在此浏览器中加密。持有完整链接的人可以阅读；服务器无法恢复丢失的解密密钥。',
+    emptyFile: '文件不能为空，请选择至少 1 字节的文件。', largeFile: '文件超过 64 MiB 的上限。', manyFiles: '仅支持一个文件，已选择第一个。',
+    challenge: '请先完成人机验证。', rateLimit: (seconds: number) => `请求过于频繁，请 ${seconds} 秒后重试。`,
+    unexpected: '发生意外错误，请重试。', uploadFailed: '上传失败，请重试。',
+    limitExceeded: (bytes: number) => `（超出 ${bytes} 字节）`,
+    shareLink: '分享链接', managementToken: '管理令牌', tokenNote: '请立即保存。令牌只显示一次；修改或删除分享时需要使用，uPaste 无法恢复它。',
+    copyLink: '复制链接', copyToken: '复制令牌', copied: '已复制', copyFailed: '复制失败，请手动复制', reveal: '显示', hide: '隐藏',
+    openShare: '查看分享', manageShare: '管理分享',
+    unsavedTitle: '有未保存的更改', unsavedQuestion: '确定要放弃草稿吗？', keepEditing: '继续编辑', discard: '放弃并离开',
+    never: '永久', oneHour: '1 小时', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天', custom: '自定义…',
+  },
+  en: {
+    newShare: 'New share', created: 'Share created', text: 'Text', file: 'File', content: 'Content', contentType: 'Content type',
+    format: 'Format', plain: 'Plain text', source: 'Source', markdown: 'Markdown', privacy: 'Privacy', standard: 'Standard', encrypted: 'Encrypted', expires: 'Expires',
+    placeholder: 'Paste or type content…', dropFile: 'Drop one file here', chooseFile: 'Choose file', fileLimit: 'One file, up to 64 MiB', remove: 'Remove',
+    create: 'Create share', creating: 'Creating…', preparing: 'Preparing…', uploading: 'Uploading…',
+    encryptedNote: 'Encrypted in this browser. Anyone with the complete link can read it. The server cannot recover a lost decryption key.',
+    emptyFile: 'File is empty. Select a file with at least 1 byte.', largeFile: 'File exceeds maximum size limit of 64 MiB.', manyFiles: 'Only one file per share is supported. The first file was selected.',
+    challenge: 'Complete the human verification challenge before creating a share.', rateLimit: (seconds: number) => `Rate limit exceeded. Please wait ${seconds} seconds before trying again.`,
+    unexpected: 'An unexpected error occurred. Please try again.', uploadFailed: 'Failed to upload file. Please try again.',
+    limitExceeded: (bytes: number) => `(Limit exceeded by ${bytes} bytes)`,
+    shareLink: 'Share link', managementToken: 'Management token', tokenNote: 'Save this token now. It is shown once and is required to modify or delete this share. uPaste cannot recover it.',
+    copyLink: 'Copy link', copyToken: 'Copy token', copied: 'Copied', copyFailed: 'Copy failed; copy manually', reveal: 'Reveal', hide: 'Hide',
+    openShare: 'Open share', manageShare: 'Manage share',
+    unsavedTitle: 'You have unsaved changes.', unsavedQuestion: 'Are you sure you want to discard your draft?', keepEditing: 'Keep editing', discard: 'Discard and leave',
+    never: 'Never', oneHour: '1 hour', oneDay: '1 day', sevenDays: '7 days', thirtyDays: '30 days', custom: 'Custom…',
+  },
+} as const satisfies Record<Language, object>;

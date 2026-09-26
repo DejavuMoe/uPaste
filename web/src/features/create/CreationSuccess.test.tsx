@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import { CreationSuccess } from './CreationSuccess';
@@ -22,7 +22,7 @@ describe('CreationSuccess', () => {
 
   it('renders standard share link and masked owner token', () => {
     renderWithProviders(
-      <CreationSuccess
+      <CreationSuccess language="en"
         shareId="share123"
         ownerToken="up_o1_abcdef123456"
         onReset={vi.fn()}
@@ -42,7 +42,7 @@ describe('CreationSuccess', () => {
 
   it('renders encrypted share link with #up_e1_ fragment', () => {
     renderWithProviders(
-      <CreationSuccess
+      <CreationSuccess language="en"
         shareId="encshare456"
         ownerToken="up_o1_token999"
         encryptionKey="my_secret_key_base64"
@@ -58,20 +58,20 @@ describe('CreationSuccess', () => {
 
   it('toggles token masking when clicking Reveal/Hide', () => {
     renderWithProviders(
-      <CreationSuccess
+      <CreationSuccess language="en"
         shareId="share123"
         ownerToken="up_o1_abcdef123456"
         onReset={vi.fn()}
       />,
     );
 
-    const revealBtn = screen.getByRole('button', { name: /reveal management token/i });
+    const revealBtn = screen.getByRole('button', { name: 'Reveal' });
     fireEvent.click(revealBtn);
 
     const tokenInput = screen.getByRole('textbox', { name: 'Management token' });
     expect(tokenInput).toHaveValue('up_o1_abcdef123456');
 
-    const hideBtn = screen.getByRole('button', { name: /hide management token/i });
+    const hideBtn = screen.getByRole('button', { name: 'Hide' });
     fireEvent.click(hideBtn);
 
     expect(tokenInput).toHaveValue('up_o1_••••••••••••');
@@ -86,20 +86,38 @@ describe('CreationSuccess', () => {
     });
 
     renderWithProviders(
-      <CreationSuccess
+      <CreationSuccess language="en"
         shareId="share123"
         ownerToken="up_o1_abcdef123456"
         onReset={vi.fn()}
       />,
     );
 
-    const copyLinkBtn = screen.getByRole('button', { name: /copy link to clipboard/i });
+    const copyLinkBtn = screen.getByRole('button', { name: 'Copy link' });
     fireEvent.click(copyLinkBtn);
     expect(writeTextMock).toHaveBeenCalledWith('http://localhost:3000/s/share123');
 
-    const copyTokenBtn = screen.getByRole('button', { name: /copy token to clipboard/i });
+    const copyTokenBtn = screen.getByRole('button', { name: 'Copy token' });
     fireEvent.click(copyTokenBtn);
     expect(writeTextMock).toHaveBeenCalledWith('up_o1_abcdef123456');
+  });
+
+  it('reveals and selects the real token when copying is denied', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+    const promptSpy = vi.spyOn(window, 'prompt').mockImplementation(() => null);
+    renderWithProviders(
+      <CreationSuccess language="en" shareId="share123" ownerToken="up_o1_abcdef123456" onReset={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy token' }));
+
+    const tokenInput = screen.getByRole('textbox', { name: 'Management token' }) as HTMLInputElement;
+    await waitFor(() => expect(tokenInput).toHaveValue('up_o1_abcdef123456'));
+    await waitFor(() => expect(tokenInput).toHaveFocus());
+    expect(tokenInput.selectionStart).toBe(0);
+    expect(tokenInput.selectionEnd).toBe(tokenInput.value.length);
+    expect(screen.getByText('Copy failed; copy manually')).toBeInTheDocument();
+    expect(promptSpy).not.toHaveBeenCalled();
   });
 
   it('navigates to manage and remembers capability in volatile memory only without leaking to history state or storage', () => {
@@ -121,7 +139,7 @@ describe('CreationSuccess', () => {
             <Route
               path="/"
               element={
-                <CreationSuccess
+                <CreationSuccess language="en"
                   shareId="share123"
                   ownerToken="up_o1_abcdef123456"
                   onReset={vi.fn()}
@@ -161,7 +179,7 @@ describe('CreationSuccess', () => {
   it('triggers onReset when clicking New share', () => {
     const onReset = vi.fn();
     renderWithProviders(
-      <CreationSuccess
+      <CreationSuccess language="en"
         shareId="share123"
         ownerToken="up_o1_abcdef123456"
         onReset={onReset}

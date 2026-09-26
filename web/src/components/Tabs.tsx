@@ -10,9 +10,10 @@ export interface TabsProps {
   activeTab: string
   onChange: (tabId: string) => void
   className?: string
+  label?: string
 }
 
-export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
+export function Tabs({ tabs, activeTab, onChange, className = '', label }: TabsProps) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -37,7 +38,7 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
   }
 
   return (
-    <div role="tablist" className={`tabs-container ${className}`} aria-orientation="horizontal">
+    <div role="tablist" className={`tabs-container ${className}`} aria-label={label} aria-orientation="horizontal">
       {tabs.map((tab, idx) => {
         const isActive = tab.id === activeTab
         return (

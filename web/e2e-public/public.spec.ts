@@ -28,6 +28,7 @@ async function installFakeTurnstile(page: Page): Promise<string[]> {
 test('public mode requires a challenge token in the dedicated header', async ({ page, request }) => {
   const violations = await installFakeTurnstile(page);
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   const textPanel = page.getByRole('tabpanel', { name: 'Text' });
   await expect(textPanel.getByText('Verified')).toBeVisible({ timeout: 15_000 });
 
@@ -40,7 +41,7 @@ test('public mode requires a challenge token in the dedicated header', async ({ 
   expect(config.challenge.site_key).toBe('1x00000000000000000000AA');
   expect(JSON.stringify(config)).not.toContain('test-secret');
 
-  await textPanel.getByRole('textbox', { name: 'Share text content' }).fill('public challenge text');
+  await textPanel.getByRole('textbox', { name: 'Content' }).fill('public challenge text');
   const createRequest = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/api/v1/shares'));
   const createResponse = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/api/v1/shares'));
   await textPanel.getByRole('button', { name: 'Create share' }).click();
@@ -71,6 +72,7 @@ test('public mode hides Never and 30 days expiration choices', async ({ page }) 
     route.fulfill({ status: 200, contentType: 'application/javascript', body: `window.turnstile = { render: function(element, options) { return 'w'; }, remove: function() {}, reset: function() {} };` }),
   );
   await page.goto('/');
+  await page.getByRole('button', { name: 'EN' }).click();
   const expiration = page.getByRole('tabpanel', { name: 'Text' }).getByLabel('Expiration');
   await expect(expiration).toHaveValue('1d');
   const optionTexts = await expiration.locator('option').allTextContents();

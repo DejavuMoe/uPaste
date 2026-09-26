@@ -8,6 +8,8 @@ export interface CopyButtonProps {
   variant?: ButtonVariant
   className?: string
   onCopied?: () => void
+  onCopyFailed?: (text: string) => void
+  ariaLabel?: string
 }
 
 export function CopyButton({
@@ -17,6 +19,8 @@ export function CopyButton({
   variant = 'secondary',
   className = '',
   onCopied,
+  onCopyFailed,
+  ariaLabel,
 }: CopyButtonProps) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<number | null>(null)
@@ -40,24 +44,25 @@ export function CopyButton({
         textarea.style.position = 'fixed'
         textarea.style.opacity = '0'
         document.body.appendChild(textarea)
-        textarea.select()
-        document.execCommand('copy')
-        document.body.removeChild(textarea)
+        try {
+          textarea.select()
+          if (!document.execCommand('copy')) throw new Error('Copy failed')
+        } finally {
+          textarea.remove()
+        }
       }
-
-      setCopied(true)
-      onCopied?.()
-
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current)
-      }
-      timerRef.current = window.setTimeout(() => {
-        setCopied(false)
-      }, 1500)
     } catch {
-      // If copy fails completely, trigger fallback selection or prompt
-      prompt('Copy to clipboard: Ctrl+C, Enter', textToCopy)
+      setCopied(false)
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+      if (onCopyFailed) onCopyFailed(textToCopy)
+      else prompt('Copy to clipboard: Ctrl+C, Enter', textToCopy)
+      return
     }
+
+    setCopied(true)
+    onCopied?.()
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(() => setCopied(false), 1500)
   }
 
   return (
@@ -66,7 +71,7 @@ export function CopyButton({
       variant={variant}
       className={`btn-copy ${className}`}
       onClick={handleCopy}
-      aria-label={copied ? copiedLabel : `${label} to clipboard`}
+      aria-label={copied ? copiedLabel : ariaLabel ?? `${label} to clipboard`}
     >
       <span aria-live="polite">{copied ? copiedLabel : label}</span>
     </Button>
