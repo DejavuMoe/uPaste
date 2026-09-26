@@ -1,0 +1,79 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "A Focus Canvas": {
+      "versions": [
+        {
+          "path": "variant-a.html",
+          "createdAt": "2026-09-26T03:41:57.247Z",
+          "status": "changes-requested",
+          "subtitle": "Immediate content workspace",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    },
+    "B Dispatch Console": {
+      "versions": [
+        {
+          "path": "variant-b.html",
+          "createdAt": "2026-09-26T03:41:58.038Z",
+          "status": "changes-requested",
+          "subtitle": "Editor with persistent delivery inspector",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    },
+    "C Guided Handoff": {
+      "versions": [
+        {
+          "path": "variant-c.html",
+          "createdAt": "2026-09-26T03:41:58.931Z",
+          "status": "changes-requested",
+          "subtitle": "Content, settings, result sequence",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    },
+    "Direction comparison": {
+      "versions": [
+        {
+          "path": "index.html",
+          "createdAt": "2026-09-26T03:50:12.981Z",
+          "status": "changes-requested",
+          "subtitle": "Review entry for three interactive prototypes",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    },
+    "V2 Single Composer": {
+      "versions": [
+        {
+          "path": "prototype-v2.html",
+          "createdAt": "2026-09-26T04:16:10.410Z",
+          "status": "approved",
+          "subtitle": "Content-first creation and credential handoff revision",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-09-26T03:41:57.248Z",
+  "updatedAt": "2026-09-26T04:28:30.681Z"
+}

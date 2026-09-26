@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>uPaste</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-synthesis: none;
+      --canvas: #101519;
+      --surface: #171d22;
+      --surface-raised: #1d252b;
+      --surface-soft: #141a1e;
+      --line: #313b42;
+      --line-strong: #48565e;
+      --text: #edf3f3;
+      --muted: #a3b0b6;
+      --quiet: #819199;
+      --accent: #67d5e1;
+      --accent-ink: #09252b;
+      --accent-wash: #17373d;
+      --danger: #ed918e;
+      --danger-wash: #3a2428;
+    }
+    :root[data-theme="light"] {
+      --canvas: #f1f4f2;
+      --surface: #f9fbfa;
+      --surface-raised: #ffffff;
+      --surface-soft: #edf1f0;
+      --line: #cbd4d3;
+      --line-strong: #9eadac;
+      --text: #142326;
+      --muted: #4a6267;
+      --quiet: #53696e;
+      --accent: #006a78;
+      --accent-ink: #ffffff;
+      --accent-wash: #d8eeee;
+      --danger: #a32a2d;
+      --danger-wash: #f9e9e7;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--canvas); }
+    body { margin: 0; min-width: 320px; color: var(--text); background: var(--canvas); }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    a { color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    ::selection { color: var(--accent-ink); background: var(--accent); }
+    .topbar { border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+    .topbar-inner { width: min(100%, 1536px); margin: auto; padding: 0 38px; height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { border: 0; background: none; padding: 0; color: var(--text); font-weight: 730; font-size: 26px; letter-spacing: -.065em; line-height: 1; }
+    .brand span { color: var(--accent); }
+    .top-actions { display: flex; align-items: center; gap: 18px; }
+    .lang-switch { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--line); padding: 3px; }
+    .lang-switch button { border: 0; background: transparent; color: var(--muted); min-width: 43px; min-height: 31px; padding: 3px 8px; font-size: 12px; font-weight: 650; letter-spacing: .03em; }
+    .lang-switch button.active { background: var(--accent-wash); color: var(--accent); }
+    .theme-select { width: 120px; min-height: 38px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 0; background: var(--surface-soft); color: var(--text); color-scheme: dark; font-size: 12px; }
+    :root[data-theme="light"] .theme-select { color-scheme: light; }
+    .theme-select:hover, .lang-switch button:not(.active):hover { border-color: var(--line-strong); color: var(--text); }
+    .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .shell { width: min(100%, 1536px); margin: auto; }
+    .workspace { min-height: calc(100dvh - 73px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(338px, 392px); }
+    .work-main { min-width: 0; padding: 38px clamp(24px, 3vw, 52px) 44px; }
+    .inspector { min-width: 0; border-left: 1px solid var(--line); background: var(--surface-soft); padding: 40px 32px 28px; }
+    .inspector-inner { position: sticky; top: 24px; }
+    .page-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 0; font-size: clamp(27px, 2.5vw, 36px); line-height: 1.15; font-weight: 630; letter-spacing: -.045em; }
+    .page-meta { color: var(--quiet); font-size: 12px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+    .kind-tabs { display: flex; gap: 9px; padding: 20px 0 18px; }
+    .kind-tab { min-width: 112px; min-height: 44px; border: 1px solid var(--line); background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 9px; padding: 9px 15px; font-size: 14px; }
+    .kind-tab.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); }
+    .kind-tab:not(.active):hover { border-color: var(--line-strong); color: var(--text); }
+    .kind-tab .icon { display: inline-flex; align-items: center; }
+    .editor-shell { min-height: min(61vh, 600px); border: 1px solid var(--line-strong); background: var(--surface); display: flex; flex-direction: column; transition: border-color .14s ease; }
+    .editor-shell:focus-within { border-color: var(--accent); }
+    .editor-topline { min-height: 38px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 18px; color: var(--quiet); font-family: ui-monospace, Consolas, monospace; font-size: 11px; letter-spacing: .04em; }
+    .editor-shell textarea { width: 100%; flex: 1; min-height: 370px; padding: 21px 20px; resize: vertical; border: 0; outline: 0; color: var(--text); background: transparent; line-height: 1.6; font-family: ui-monospace, "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: 14px; tab-size: 2; }
+    .editor-shell textarea::placeholder { color: var(--quiet); opacity: 1; }
+    .editor-footline { min-height: 39px; padding: 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; border-top: 1px solid var(--line); color: var(--quiet); font: 11px ui-monospace, Consolas, monospace; }
+    .editor-footline .over { color: var(--danger); }
+    .file-zone { min-height: min(61vh, 600px); border: 1px dashed var(--line-strong); background: var(--surface); display: flex; justify-content: center; align-items: center; text-align: center; padding: 35px; transition: .14s ease; }
+    .file-zone.dragging { border-color: var(--accent); background: var(--accent-wash); }
+    .file-zone .file-inner { width: 100%; }
+    .file-symbol { display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto 19px; border: 1px solid var(--line-strong); color: var(--accent); }
+    .file-symbol svg { width: 31px; height: 31px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+    .file-zone h2 { margin-bottom: 6px; font-size: 20px; font-weight: 600; letter-spacing: -.03em; }
+    .file-zone p { margin-bottom: 18px; color: var(--muted); font-size: 13px; }
+    .file-zone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .file-picked { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 16px; width: min(100%, 560px); margin: auto; border: 1px solid var(--line); background: var(--surface-raised); text-align: left; padding: 17px; }
+    .file-picked .file-symbol { width: 44px; height: 44px; margin: 0; }
+    .file-picked .file-symbol svg { width: 21px; height: 21px; }
+    .filename { overflow-wrap: anywhere; font-weight: 600; font-size: 14px; }
+    .filesize { color: var(--muted); font: 12px ui-monospace, Consolas, monospace; margin-top: 3px; }
+    .inspector-title { margin: 0 0 22px; padding-bottom: 17px; border-bottom: 1px solid var(--line); font-size: 22px; font-weight: 620; letter-spacing: -.04em; }
+    .setting { border-bottom: 1px solid var(--line); padding: 0 0 24px; margin-bottom: 24px; }
+    .setting-label { margin-bottom: 13px; font-size: 14px; font-weight: 600; }
+    .choice-grid { display: grid; gap: 8px; }
+    .choice-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .choice-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .choice { min-height: 65px; width: 100%; padding: 12px 11px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 8px; text-align: left; font-size: 12px; line-height: 1.25; }
+    .choice:hover { border-color: var(--line-strong); color: var(--text); }
+    .choice.active { border-color: var(--accent); background: var(--accent-wash); color: var(--text); }
+    .choice .glyph { color: var(--accent); font: 12px ui-monospace, Consolas, monospace; letter-spacing: -.03em; }
+    .choice .mark { align-self: flex-end; margin-top: -22px; width: 11px; height: 11px; border: 1px solid currentColor; border-radius: 50%; }
+    .choice.active .mark { box-shadow: inset 0 0 0 2px var(--accent-wash); background: var(--accent); border-color: var(--accent); }
+    .choice.expiry { min-height: 47px; align-items: center; justify-content: center; text-align: center; font-size: 12px; }
+    .choice.expiry .mark { display: none; }
+    .setting-help { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .setting-help.warning { color: var(--text); border-left: 2px solid var(--accent); padding-left: 10px; }
+    .field-label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .date-input, .token-input, .link-input { width: 100%; min-height: 42px; border: 1px solid var(--line-strong); border-radius: 0; padding: 8px 11px; background: var(--surface); color: var(--text); }
+    .date-input { margin-top: 12px; color-scheme: dark; }
+    :root[data-theme="light"] .date-input { color-scheme: light; }
+    .inspector-bottom { padding-top: 3px; }
+    .submit-button { width: 100%; min-height: 54px; padding: 12px 18px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); font-size: 14px; font-weight: 720; letter-spacing: .01em; }
+    .submit-button:hover:not(:disabled) { filter: brightness(1.07); }
+    .submit-button:disabled { border-color: var(--line); background: var(--surface-raised); color: var(--quiet); }
+    .mobile-submit { display: none; }
+    .inline-error { color: var(--danger); background: var(--danger-wash); border-left: 2px solid var(--danger); padding: 10px 12px; margin: 12px 0 0; font-size: 12px; line-height: 1.45; }
+    .small-button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); font-size: 12px; font-weight: 600; }
+    .small-button:hover { border-color: var(--accent); color: var(--accent); }
+    .text-button { border: 0; background: none; padding: 6px 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
+    .text-button:hover { color: var(--text); }
+    .mono { font-family: ui-monospace, Consolas, monospace; }
+    .result-block { border: 1px solid var(--line); background: var(--surface); padding: 24px; margin-top: 24px; }
+    .result-block h2 { font-size: 14px; font-weight: 620; margin: 0 0 14px; }
+    .result-block .row { display: flex; align-items: stretch; gap: 8px; }
+    .result-block .row input { flex: 1; min-width: 0; }
+    .result-block .row .small-button { flex: 0 0 auto; }
+    .result-block p { margin: 13px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+    .result-block .warning { padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .action-primary, .action-secondary, .action-danger { min-height: 44px; padding: 10px 16px; font-size: 13px; font-weight: 650; }
+    .action-primary { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .action-secondary { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); }
+    .action-danger { border: 1px solid var(--danger); background: transparent; color: var(--danger); }
+    .action-primary:hover { filter: brightness(1.07); }
+    .action-secondary:hover { border-color: var(--accent); }
+    .action-danger:hover { background: var(--danger-wash); }
+    .state-label { display: inline-flex; border: 1px solid var(--line); padding: 5px 8px; color: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+    .viewer-box { min-height: 470px; border: 1px solid var(--line); background: var(--surface); padding: 24px; margin-top: 22px; overflow: auto; }
+    .viewer-box pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.7 ui-monospace, Consolas, "Microsoft YaHei", monospace; }
+    .viewer-box h2 { font-size: 23px; line-height: 1.3; margin: 0 0 17px; }
+    .viewer-box p { line-height: 1.7; white-space: pre-wrap; }
+    .viewer-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
+    .viewer-tools .actions { margin: 0; }
+    .meta-list { display: grid; gap: 12px; margin: 0; }
+    .meta-list div { display: grid; grid-template-columns: 100px minmax(0,1fr); gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+    .meta-list dt { color: var(--muted); font-size: 12px; }
+    .meta-list dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+    .manage-input { display: block; width: 100%; min-height: 420px; padding: 20px; resize: vertical; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: 14px/1.6 ui-monospace, Consolas, "Microsoft YaHei", monospace; margin-top: 22px; }
+    .danger-section { margin-top: 35px; padding-top: 23px; border-top: 1px solid var(--line); }
+    .danger-section h3 { margin-bottom: 8px; font-size: 14px; }
+    .danger-section p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(4,10,12,.73); }
+    .dialog { width: min(100%, 440px); border: 1px solid var(--line-strong); background: var(--surface-raised); padding: 28px; box-shadow: 0 18px 60px rgba(0,0,0,.28); }
+    .dialog h2 { margin-bottom: 12px; font-size: 21px; }
+    .dialog p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .dialog .actions { justify-content: flex-end; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @media (max-width: 980px) {
+      .workspace { grid-template-columns: minmax(0,1fr) 328px; }
+      .work-main { padding-left: 26px; padding-right: 26px; }
+      .inspector { padding-left: 24px; padding-right: 24px; }
+    }
+    @media (max-width: 760px) {
+      body.on-create { padding-bottom: 110px; }
+      .topbar-inner { height: 58px; padding: 0 18px; }
+      .brand { font-size: 23px; }
+      .top-actions { gap: 9px; }
+      .theme-select { width: 100px; }
+      .workspace { display: block; min-height: 0; }
+      .work-main { padding: 28px 18px 25px; }
+      .inspector { border-left: 0; border-top: 1px solid var(--line); padding: 28px 18px 36px; }
+      .inspector-inner { position: static; }
+      .page-head { padding-bottom: 16px; }
+      h1 { font-size: 29px; }
+      .page-meta { display: none; }
+      .kind-tabs { padding: 17px 0 15px; }
+      .kind-tab { flex: 1; }
+      .editor-shell { min-height: 355px; }
+      .editor-shell textarea { min-height: 300px; }
+      .file-zone { min-height: 350px; }
+      .inspector-title { font-size: 21px; }
+      .desktop-submit { display: none; }
+      .mobile-submit { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: block; padding: 10px 18px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface-soft); }
+      .mobile-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 9px; font-size: 11px; line-height: 1.3; }
+      .mobile-summary span { color: var(--muted); }
+      .mobile-summary strong { display: block; margin-top: 2px; color: var(--text); font-weight: 620; overflow-wrap: anywhere; }
+      .mobile-submit .submit-button { min-height: 48px; }
+      .result-block { padding: 18px; }
+      .result-block .row { flex-wrap: wrap; }
+      .result-block .row input { flex-basis: 100%; }
+      .result-block .row .small-button { flex: 1; }
+      .actions > button { flex: 1; }
+      .viewer-box { min-height: 340px; padding: 18px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const LIMIT_TEXT = 1048576;
+    const LIMIT_FILE = 67108864;
+    const locale = {
+      zh: {
+        newShare:'新建分享', shareSettings:'分享设置', text:'文本', file:'文件', format:'格式', privacy:'隐私', expires:'有效期',
+        plain:'纯文本', source:'源代码', markdown:'Markdown', standard:'标准', encrypted:'加密', never:'永不过期', hour:'1 小时', day:'1 天', week:'7 天', month:'30 天', custom:'自定义',
+        textPlaceholder:'粘贴或输入内容…', content:'内容', bytes:'字节', create:'创建分享', chooseFile:'选择文件', dropFile:'拖入一个文件', fileHint:'或从设备中选择', remove:'移除',
+        fileLimit:'单个文件，最大 64 MiB', textLimit:'最大 1 MiB UTF-8', fileStandard:'文件分享仅支持标准模式。', encryptedInfo:'内容在浏览器中加密。持有完整链接的人可以读取；解密密钥遗失后无法恢复。',
+        selectDate:'选择日期和时间', dateError:'有效期必须晚于当前时间。', emptyError:'请输入内容。', fileError:'请选择一个文件。', tooLargeText:'文本超过 1 MiB 限制。', tooLargeFile:'文件超过 64 MiB 限制。', oneFile:'每份分享只能包含一个文件。',
+        created:'分享已创建', link:'分享链接', copyLink:'复制链接', copied:'已复制', copyFailed:'请手动复制', token:'管理令牌', show:'显示', hide:'隐藏', copyToken:'复制令牌', tokenHelp:'请现在保存此令牌。修改或删除分享时需要它；此页面关闭后不会再次显示。',
+        open:'打开分享', manage:'管理分享', again:'新建分享', share:'分享内容', copyContent:'复制内容', raw:'原文', render:'渲染', code:'源码', wrap:'自动换行', download:'下载文件', size:'大小', type:'类型',
+        manageTitle:'管理分享', save:'保存更改', cancel:'取消', delete:'删除分享', deleteTitle:'删除这份分享？', deleteBody:'删除后，持有链接的人将立即无法访问。此操作无法撤销。', deleteConfirm:'永久删除', deleted:'分享已删除',
+        discardTitle:'放弃未保存的内容？', discardBody:'当前内容将被丢弃。', keep:'继续编辑', discard:'放弃并离开', keyMissing:'缺少解密密钥', keyMissingBody:'需要包含解密密钥的完整链接才能读取此分享。',
+        fileNoPreview:'文件将作为附件下载。', theme:'界面主题', systemTheme:'跟随系统', lightTheme:'浅色', darkTheme:'深色', changeLanguage:'语言', reset:'重置', textFormat:'文本格式', view:'查看分享', changesSaved:'更改已保存'
+      },
+      en: {
+        newShare:'New share', shareSettings:'Share settings', text:'Text', file:'File', format:'Format', privacy:'Privacy', expires:'Expires',
+        plain:'Plain text', source:'Source', markdown:'Markdown', standard:'Standard', encrypted:'Encrypted', never:'Never', hour:'1 hour', day:'1 day', week:'7 days', month:'30 days', custom:'Custom',
+        textPlaceholder:'Paste or type content…', content:'Content', bytes:'bytes', create:'Create share', chooseFile:'Choose file', dropFile:'Drop one file here', fileHint:'or choose from your device', remove:'Remove',
+        fileLimit:'One file, maximum 64 MiB', textLimit:'Maximum 1 MiB UTF-8', fileStandard:'File shares support Standard privacy only.', encryptedInfo:'Encrypted in this browser. Anyone with the complete link can read it; a lost decryption key cannot be recovered.',
+        selectDate:'Select date and time', dateError:'Expiration date must be in the future.', emptyError:'Enter content.', fileError:'Choose a file.', tooLargeText:'Text exceeds the 1 MiB limit.', tooLargeFile:'File exceeds the 64 MiB limit.', oneFile:'Only one file per share is supported.',
+        created:'Share created', link:'Share link', copyLink:'Copy link', copied:'Copied', copyFailed:'Select and copy manually', token:'Management token', show:'Reveal', hide:'Hide', copyToken:'Copy token', tokenHelp:'Save this token now. It is required to modify or delete this share and will not be shown again after this page closes.',
+        open:'Open share', manage:'Manage share', again:'New share', share:'Share content', copyContent:'Copy content', raw:'Raw', render:'Rendered', code:'Source', wrap:'Wrap lines', download:'Download file', size:'Size', type:'Type',
+        manageTitle:'Manage share', save:'Save changes', cancel:'Cancel', delete:'Delete share', deleteTitle:'Delete this share?', deleteBody:'Anyone with the link will immediately lose access. This action cannot be undone.', deleteConfirm:'Delete permanently', deleted:'Share deleted',
+        discardTitle:'Discard unsaved content?', discardBody:'Your current content will be lost.', keep:'Keep editing', discard:'Discard and leave', keyMissing:'Decryption key missing', keyMissingBody:'The complete link containing the decryption key is required to read this share.',
+        fileNoPreview:'The file downloads as an attachment.', theme:'Color theme', systemTheme:'System', lightTheme:'Light', darkTheme:'Dark', changeLanguage:'Language', reset:'Reset', textFormat:'Text format', view:'View share', changesSaved:'Changes saved'
+      }
+    };
+    const state = {
+      lang:'zh', theme:'dark', screen:'create', kind:'text', format:'plain', privacy:'standard', expiry:'never', customDate:'',
+      content:'', file:null, error:'', copied:'', reveal:false, modal:'', viewMode:'render', wrap:true, editedContent:'', savedNotice:false,
+      shareId:'', ownerToken:'', encryptionKey:'', createdKind:'text', createdFormat:'plain', createdPrivacy:'standard', createdExpiry:'never', pendingScreen:''
+    };
+    const systemThemeQuery = window.matchMedia('(prefers-color-scheme: light)');
+    systemThemeQuery.addEventListener('change', () => { if (state.theme === 'system') document.documentElement.dataset.theme = systemThemeQuery.matches ? 'light' : 'dark'; });
+    const $ = (id) => document.getElementById(id);
+    const t = (key) => locale[state.lang][key];
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const bytes = (value) => new TextEncoder().encode(value).byteLength;
+    const prettyBytes = (value) => value < 1024 ? `${value} B` : value < 1048576 ? `${(value/1024).toFixed(1)} KiB` : `${(value/1048576).toFixed(1)} MiB`;
+    const icon = (name) => ({
+      text:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg>',
+      file:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h6l5 5v13H8zM14 3v5h5M8 12H5V6"/></svg>'
+    })[name];
+    function randomBase64url(count) {
+      const data = new Uint8Array(count);
+      crypto.getRandomValues(data);
+      return btoa(String.fromCharCode(...data)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+    function shareLink() {
+      const base = `https://example.invalid/s/${state.shareId}`;
+      return state.createdPrivacy === 'encrypted' ? `${base}#up_e1_${state.encryptionKey}` : base;
+    }
+    function selectCard(key, value, label, glyph) {
+      const active = state[key] === value;
+      return `<button type="button" class="choice${active?' active':''}" data-select="${key}:${value}" aria-pressed="${active}"><span class="glyph">${glyph}</span><span>${esc(label)}</span><span class="mark" aria-hidden="true"></span></button>`;
+    }
+    function expiryCard(value, label) {
+      const active = state.expiry === value;
+      return `<button type="button" class="choice expiry${active?' active':''}" data-select="expiry:${value}" aria-pressed="${active}">${esc(label)}</button>`;
+    }
+    function dateInvalid() {
+      if (state.expiry !== 'custom') return false;
+      const value = new Date(state.customDate).getTime();
+      return !state.customDate || !Number.isFinite(value) || value <= Date.now() + 60000;
+    }
+    function manageDirty() {
+      return state.editedContent !== state.content || state.expiry !== state.createdExpiry || state.format !== state.createdFormat;
+    }
+    function expirySummary() {
+      return state.expiry === 'custom' && state.customDate ? `${t('custom')} · ${state.customDate.replace('T', ' ')}` : t(state.expiry);
+    }
+    function canCreate() {
+      if (dateInvalid()) return false;
+      return state.kind === 'text' ? bytes(state.content) > 0 && bytes(state.content) <= LIMIT_TEXT : !!state.file && state.file.size <= LIMIT_FILE;
+    }
+    function settings() {
+      return `<aside class="inspector"><div class="inspector-inner"><h2 class="inspector-title">${t('shareSettings')}</h2>
+        ${state.kind === 'text' ? `<section class="setting" aria-labelledby="format-heading"><div class="setting-label" id="format-heading">${t('format')}</div><div class="choice-grid three" role="group" aria-label="${t('format')}">
+          ${selectCard('format','plain',t('plain'),'TXT')}${selectCard('format','source',t('source'),'&lt;/&gt;')}${selectCard('format','markdown',t('markdown'),'MD')}</div></section>
+        <section class="setting" aria-labelledby="privacy-heading"><div class="setting-label" id="privacy-heading">${t('privacy')}</div><div class="choice-grid two" role="group" aria-label="${t('privacy')}">
+          ${selectCard('privacy','standard',t('standard'),'○')}${selectCard('privacy','encrypted',t('encrypted'),'◇')}</div>
+          ${state.privacy === 'encrypted' ? `<p class="setting-help warning">${t('encryptedInfo')}</p>` : ''}</section>` : `<section class="setting"><div class="setting-label">${t('privacy')}</div><p class="setting-help">${t('fileStandard')}</p></section>`}
+        <section class="setting" aria-labelledby="expires-heading"><div class="setting-label" id="expires-heading">${t('expires')}</div><div class="choice-grid three" role="group" aria-label="${t('expires')}">
+          ${expiryCard('never',t('never'))}${expiryCard('hour',t('hour'))}${expiryCard('day',t('day'))}${expiryCard('week',t('week'))}${expiryCard('month',t('month'))}${expiryCard('custom',t('custom'))}</div>
+          ${state.expiry === 'custom' ? `<label class="sr-only" for="custom-date">${t('selectDate')}</label><input class="date-input" type="datetime-local" id="custom-date" value="${esc(state.customDate)}"><p class="inline-error" id="date-error"${dateInvalid()?'':' hidden'}>${t('dateError')}</p>` : ''}
+        </section><div class="inspector-bottom desktop-submit"><button type="button" class="submit-button" id="create-desktop"${canCreate()?'':' disabled'}>${t('create')}</button></div>
+      </div></aside>`;
+    }
+    function createScreen() {
+      return `<div class="workspace"><main class="work-main" id="main-content"><div class="page-head"><h1>${t('newShare')}</h1><span class="page-meta">${state.kind === 'text' ? 'TEXT / 1 MiB' : 'FILE / 64 MiB'}</span></div>
+        <div class="kind-tabs" role="group" aria-label="${t('content')}"><button type="button" class="kind-tab${state.kind==='text'?' active':''}" data-kind="text" aria-pressed="${state.kind==='text'}"><span class="icon">${icon('text')}</span>${t('text')}</button><button type="button" class="kind-tab${state.kind==='file'?' active':''}" data-kind="file" aria-pressed="${state.kind==='file'}"><span class="icon">${icon('file')}</span>${t('file')}</button></div>
+        ${state.kind === 'text' ? `<section class="editor-shell" aria-label="${t('text')}"><div class="editor-topline"><span>${t('content')}</span><span>${state.format==='source'?'SOURCE':state.format==='markdown'?'MARKDOWN':'PLAIN TEXT'}</span></div><label class="sr-only" for="content-input">${t('content')}</label><textarea id="content-input" spellcheck="false" placeholder="${t('textPlaceholder')}"></textarea><div class="editor-footline"><span>${t('textLimit')}</span><span id="byte-count" class="${bytes(state.content)>LIMIT_TEXT?'over':''}">${prettyBytes(bytes(state.content))} / 1 MiB</span></div></section>` :
+          `<section class="file-zone" id="file-zone" aria-label="${t('file')}"><div class="file-inner">${state.file ? `<div class="file-picked"><span class="file-symbol" aria-hidden="true">${icon('file')}</span><div><div class="filename">${esc(state.file.name)}</div><div class="filesize">${prettyBytes(state.file.size)}</div></div><button type="button" class="small-button" id="remove-file">${t('remove')}</button></div>` : `<span class="file-symbol" aria-hidden="true">${icon('file')}</span><h2>${t('dropFile')}</h2><p>${t('fileHint')}</p><label class="small-button" for="file-input" role="button" tabindex="0">${t('chooseFile')}</label><input id="file-input" type="file"><p class="setting-help">${t('fileLimit')}</p>`}</div></section>`}
+        ${state.error ? `<p class="inline-error" role="alert">${esc(state.error)}</p>` : ''}
+      </main>${settings()}</div><div class="mobile-submit"><div class="mobile-summary"><div><span>${t('privacy')}</span><strong>${t(state.kind === 'file' ? 'standard' : state.privacy)}</strong></div><div><span>${t('expires')}</span><strong id="mobile-expiry-value">${esc(expirySummary())}</strong></div></div><button type="button" class="submit-button" id="create-mobile"${canCreate()?'':' disabled'}>${t('create')}</button></div>`;
+    }
+    function successScreen() {
+      const masked = 'up_o1_' + '•'.repeat(16);
+      return `<div class="workspace"><main class="work-main" id="main-content"><div class="page-head"><h1>${t('created')}</h1></div>
+        <section class="result-block"><h2>${t('link')}</h2><div class="row"><input id="share-link" class="link-input mono" readonly aria-label="${t('link')}" value="${esc(shareLink())}"><button class="small-button" type="button" data-copy="link">${state.copied==='link'?t('copied'):t('copyLink')}</button></div><p id="copy-notice" role="status" hidden></p></section>
+        <div class="actions"><button type="button" class="action-primary" data-screen="viewer">${t('open')}</button><button type="button" class="action-secondary" data-screen="manage">${t('manage')}</button><button type="button" class="text-button" data-reset="true">${t('again')}</button></div>
+      </main><aside class="inspector"><div class="inspector-inner"><h2 class="inspector-title">${t('token')}</h2><section class="result-block" style="margin-top:0"><div class="row"><input id="owner-token" class="token-input mono" readonly aria-label="${t('token')}" value="${esc(state.reveal?state.ownerToken:masked)}"><button type="button" class="small-button" id="reveal-token">${state.reveal?t('hide'):t('show')}</button><button type="button" class="small-button" data-copy="token">${state.copied==='token'?t('copied'):t('copyToken')}</button></div><p class="warning">${t('tokenHelp')}</p></section></div></aside></div>`;
+    }
+    function safeMarkdown(value) {
+      return value.split(/\r?\n/).map((line) => line.startsWith('# ') ? `<h2>${esc(line.slice(2))}</h2>` : line.trim() ? `<p>${esc(line)}</p>` : '').join('');
+    }
+    function viewerScreen() {
+      const isFile = state.createdKind === 'file';
+      const isEncrypted = state.createdPrivacy === 'encrypted';
+      const subtitle = isFile ? t('file') : t(state.createdFormat);
+      return `<div class="workspace"><main class="work-main" id="main-content"><div class="page-head"><h1>${isFile?esc(state.file?.name||t('file')):t('share')}</h1><span class="state-label">${esc(subtitle)}</span></div>
+        ${isFile ? `<div class="viewer-box"><span class="file-symbol" aria-hidden="true">${icon('file')}</span><dl class="meta-list"><div><dt>${t('size')}</dt><dd>${prettyBytes(state.file?.size||0)}</dd></div><div><dt>${t('type')}</dt><dd>${esc(state.file?.type||'application/octet-stream')}</dd></div><div><dt>${t('expires')}</dt><dd>${t(state.createdExpiry)}</dd></div></dl><p class="setting-help">${t('fileNoPreview')}</p><div class="actions"><button type="button" class="action-primary" id="download-file">${t('download')}</button></div></div>` : `<div class="viewer-tools"><span class="state-label">${isEncrypted?t('encrypted'):t('standard')} · ${prettyBytes(bytes(state.content))} · ${t(state.createdExpiry)}</span><div class="actions">${state.createdFormat==='markdown'?`<button type="button" class="small-button" id="toggle-render">${state.viewMode==='render'?t('code'):t('render')}</button>`:''}<button type="button" class="small-button" data-copy="content">${state.copied==='content'?t('copied'):t('copyContent')}</button>${isEncrypted?'':`<button type="button" class="small-button" id="raw-text">${t('raw')}</button>`}</div></div><div class="viewer-box" id="viewer-content">${state.createdFormat==='markdown'&&state.viewMode==='render'?safeMarkdown(state.content):`<pre style="white-space:${state.wrap?'pre-wrap':'pre'}">${esc(state.content)}</pre>`}</div>`}
+        <div class="actions"><button type="button" class="action-secondary" data-screen="manage">${t('manage')}</button><button type="button" class="text-button" data-reset="true">${t('again')}</button></div>
+      </main><aside class="inspector"><div class="inspector-inner"><h2 class="inspector-title">${t('shareSettings')}</h2><dl class="meta-list"><div><dt>${t('format')}</dt><dd>${isFile?'—':t(state.createdFormat)}</dd></div><div><dt>${t('privacy')}</dt><dd>${isFile?t('standard'):t(state.createdPrivacy)}</dd></div><div><dt>${t('expires')}</dt><dd>${t(state.createdExpiry)}</dd></div></dl></div></aside></div>`;
+    }
+    function manageScreen() {
+      const editable = state.createdKind === 'text';
+      return `<div class="workspace"><main class="work-main" id="main-content"><div class="page-head"><h1>${t('manageTitle')}</h1></div>
+        ${editable ? `<label class="sr-only" for="manage-input">${t('content')}</label><textarea class="manage-input" id="manage-input" spellcheck="false"></textarea><p class="setting-help" id="manage-count">${prettyBytes(bytes(state.editedContent))} / 1 MiB</p>` : `<div class="viewer-box"><span class="file-symbol" aria-hidden="true">${icon('file')}</span><p class="filename">${esc(state.file?.name||'')}</p><p class="setting-help">${t('fileLimit')}</p></div>`}
+        ${state.error?`<p class="inline-error" role="alert">${esc(state.error)}</p>`:''}${state.savedNotice?`<p class="setting-help" role="status">${t('changesSaved')}</p>`:''}
+        <div class="actions"><button type="button" class="action-primary" id="save-share">${t('save')}</button><button type="button" class="action-secondary" data-screen="viewer">${t('cancel')}</button></div>
+      </main><aside class="inspector"><div class="inspector-inner"><h2 class="inspector-title">${t('shareSettings')}</h2>${editable?`<section class="setting"><div class="setting-label">${t('format')}</div><div class="choice-grid three" role="group" aria-label="${t('format')}">${selectCard('format','plain',t('plain'),'TXT')}${selectCard('format','source',t('source'),'&lt;/&gt;')}${selectCard('format','markdown',t('markdown'),'MD')}</div></section>`:''}<section class="setting"><div class="setting-label">${t('expires')}</div><div class="choice-grid three">${expiryCard('never',t('never'))}${expiryCard('hour',t('hour'))}${expiryCard('day',t('day'))}${expiryCard('week',t('week'))}${expiryCard('month',t('month'))}${expiryCard('custom',t('custom'))}</div>${state.expiry==='custom'?`<label class="sr-only" for="custom-date">${t('selectDate')}</label><input class="date-input" type="datetime-local" id="custom-date" value="${esc(state.customDate)}">`:''}</section><div class="danger-section"><h3>${t('delete')}</h3><p>${t('deleteBody')}</p><button type="button" class="action-danger" id="delete-share">${t('delete')}</button></div></div></aside></div>`;
+    }
+    function deletedScreen() {
+      return `<div class="workspace"><main class="work-main" id="main-content"><div class="page-head"><h1>${t('deleted')}</h1></div><div class="actions"><button class="action-primary" type="button" data-reset="true">${t('again')}</button></div></main></div>`;
+    }
+    function modalHtml() {
+      if (!state.modal) return '';
+      const deleting = state.modal === 'delete';
+      return `<div class="dialog-backdrop"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><h2 id="dialog-title">${deleting?t('deleteTitle'):t('discardTitle')}</h2><p>${deleting?t('deleteBody'):t('discardBody')}</p><div class="actions"><button class="action-secondary" type="button" id="close-dialog">${deleting?t('cancel'):t('keep')}</button><button class="action-danger" type="button" id="confirm-dialog">${deleting?t('deleteConfirm'):t('discard')}</button></div></div></div>`;
+    }
+    function render() {
+      document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : 'en';
+      document.documentElement.dataset.theme = state.theme === 'system' ? (systemThemeQuery.matches ? 'light' : 'dark') : state.theme;
+      document.body.classList.toggle('on-create', state.screen === 'create');
+      document.title = `${state.screen==='create'?t('newShare'):state.screen==='success'?t('created'):state.screen==='viewer'?t('share'):state.screen==='manage'?t('manageTitle'):t('deleted')} · uPaste`;
+      $('app').innerHTML = `<header class="topbar"><div class="topbar-inner"><button type="button" class="brand" id="brand" aria-label="uPaste"><span>u</span>Paste</button><div class="top-actions"><div class="lang-switch" role="group" aria-label="${t('changeLanguage')}"><button type="button" data-lang="zh" class="${state.lang==='zh'?'active':''}" aria-pressed="${state.lang==='zh'}">中文</button><button type="button" data-lang="en" class="${state.lang==='en'?'active':''}" aria-pressed="${state.lang==='en'}">EN</button></div><label class="sr-only" for="theme-select">${t('theme')}</label><select class="theme-select" id="theme-select"><option value="system"${state.theme==='system'?' selected':''}>${t('systemTheme')}</option><option value="light"${state.theme==='light'?' selected':''}>${t('lightTheme')}</option><option value="dark"${state.theme==='dark'?' selected':''}>${t('darkTheme')}</option></select></div></div></header><div class="shell">${state.screen==='create'?createScreen():state.screen==='success'?successScreen():state.screen==='viewer'?viewerScreen():state.screen==='manage'?manageScreen():deletedScreen()}</div>${modalHtml()}`;
+      if ($('content-input')) $('content-input').value = state.content;
+      if ($('manage-input')) $('manage-input').value = state.editedContent;
+      bind();
+    }
+    function updateLive() {
+      const count = $('byte-count');
+      if (count) { count.textContent = `${prettyBytes(bytes(state.content))} / 1 MiB`; count.classList.toggle('over', bytes(state.content)>LIMIT_TEXT); }
+      if ($('mobile-expiry-value')) $('mobile-expiry-value').textContent = expirySummary();
+      for (const id of ['create-desktop','create-mobile']) if ($(id)) $(id).disabled = !canCreate();
+      if ($('manage-count')) $('manage-count').textContent = `${prettyBytes(bytes(state.editedContent))} / 1 MiB`;
+    }
+    function reset() {
+      state.screen='create'; state.kind='text'; state.format='plain'; state.privacy='standard'; state.expiry='never'; state.customDate=''; state.content=''; state.file=null; state.error=''; state.copied=''; state.reveal=false; state.ownerToken=''; state.encryptionKey=''; state.savedNotice=false; state.pendingScreen=''; render();
+    }
+    async function copyText(which) {
+      const text = which==='link'?shareLink():which==='token'?state.ownerToken:state.content;
+      try { await navigator.clipboard.writeText(text); state.copied=which; render(); setTimeout(() => { if (state.copied===which) { state.copied=''; render(); } },1500); }
+      catch { const field = which==='link'?$('share-link'):which==='token'?$('owner-token'):null; if (field) { field.select(); field.focus(); } const notice=$('copy-notice'); if (notice) { notice.hidden=false; notice.textContent=t('copyFailed'); } }
+    }
+    function submit() {
+      state.error='';
+      if (state.kind==='text' && bytes(state.content)===0) state.error=t('emptyError');
+      else if (state.kind==='text' && bytes(state.content)>LIMIT_TEXT) state.error=t('tooLargeText');
+      else if (state.kind==='file' && !state.file) state.error=t('fileError');
+      else if (dateInvalid()) state.error=t('dateError');
+      if (state.error) { render(); return; }
+      state.shareId=randomBase64url(16); state.ownerToken='up_o1_'+randomBase64url(32); state.encryptionKey=state.kind==='text'&&state.privacy==='encrypted'?randomBase64url(32):'';
+      state.createdKind=state.kind; state.createdFormat=state.format; state.createdPrivacy=state.privacy; state.createdExpiry=state.expiry; state.editedContent=state.content; state.screen='success'; state.copied=''; render();
+    }
+    function chooseFile(fileList) {
+      if (!fileList?.length) return;
+      if (fileList.length>1) { state.error=t('oneFile'); render(); return; }
+      if (fileList[0].size>LIMIT_FILE) { state.error=t('tooLargeFile'); render(); return; }
+      state.file=fileList[0]; state.error=''; render();
+    }
+    function bind() {
+      document.querySelectorAll('[data-lang]').forEach(el => el.addEventListener('click', () => { state.lang=el.dataset.lang; state.error=''; render(); }));
+      $('theme-select')?.addEventListener('change', (event) => { state.theme=event.target.value; render(); });
+      $('brand')?.addEventListener('click', () => { if ((state.screen==='create' && (state.content || state.file)) || (state.screen==='manage' && manageDirty())) { state.modal='discard'; state.pendingScreen='create'; render(); } else reset(); });
+      document.querySelectorAll('[data-kind]').forEach(el => el.addEventListener('click', () => { state.kind=el.dataset.kind; state.error=''; render(); }));
+      document.querySelectorAll('[data-select]').forEach(el => el.addEventListener('click', () => { const [key,value]=el.dataset.select.split(':'); state[key]=value; state.error=''; render(); }));
+      $('custom-date')?.addEventListener('change', (e) => { state.customDate=e.target.value; updateLive(); if ($('date-error')) $('date-error').hidden=!dateInvalid(); });
+      $('content-input')?.addEventListener('input', (e) => { state.content=e.target.value; state.error=''; updateLive(); });
+      $('content-input')?.addEventListener('keydown', (e) => { if ((e.ctrlKey||e.metaKey)&&e.key==='Enter') { e.preventDefault(); if (canCreate()) submit(); } });
+      $('file-input')?.addEventListener('change', (e) => chooseFile(e.target.files));
+      document.querySelector('label[for="file-input"]')?.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); $('file-input')?.click(); } });
+      $('remove-file')?.addEventListener('click', () => { state.file=null; render(); });
+      const zone=$('file-zone');
+      if (zone) { zone.addEventListener('dragover',(e)=>{e.preventDefault();zone.classList.add('dragging');}); zone.addEventListener('dragleave',()=>zone.classList.remove('dragging')); zone.addEventListener('drop',(e)=>{e.preventDefault();zone.classList.remove('dragging');chooseFile(e.dataTransfer.files);}); }
+      for (const id of ['create-desktop','create-mobile']) $(id)?.addEventListener('click', submit);
+      document.querySelectorAll('[data-copy]').forEach(el=>el.addEventListener('click',()=>void copyText(el.dataset.copy)));
+      $('reveal-token')?.addEventListener('click',()=>{state.reveal=!state.reveal;render();});
+      document.querySelectorAll('[data-screen]').forEach(el=>el.addEventListener('click',()=>{ const next=el.dataset.screen; if(state.screen==='manage'&&manageDirty()) { state.modal='discard'; state.pendingScreen=next; render(); return; } if(next==='manage') { state.editedContent=state.content;state.format=state.createdFormat;state.expiry=state.createdExpiry; } state.screen=next;state.savedNotice=false;state.error='';render();}));
+      document.querySelectorAll('[data-reset]').forEach(el=>el.addEventListener('click',()=>reset()));
+      $('toggle-render')?.addEventListener('click',()=>{state.viewMode=state.viewMode==='render'?'source':'render';render();});
+      $('raw-text')?.addEventListener('click',()=>{ const blob=new Blob([state.content],{type:'text/plain;charset=utf-8'}); const url=URL.createObjectURL(blob); const link=document.createElement('a'); link.href=url; link.download='share.txt'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); });
+      $('download-file')?.addEventListener('click',()=>{ if (!state.file) return; const url=URL.createObjectURL(state.file); const link=document.createElement('a'); link.href=url; link.download=state.file.name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); });
+      $('manage-input')?.addEventListener('input',(e)=>{state.editedContent=e.target.value;state.savedNotice=false;state.error='';updateLive();});
+      $('save-share')?.addEventListener('click',()=>{ if (dateInvalid()) { state.error=t('dateError');render();return; } if (state.createdKind==='text') { if (!bytes(state.editedContent)||bytes(state.editedContent)>LIMIT_TEXT) { state.error=bytes(state.editedContent)?t('tooLargeText'):t('emptyError');render();return; } state.content=state.editedContent;state.createdFormat=state.format; } state.createdExpiry=state.expiry;state.error='';state.savedNotice=true;render(); });
+      $('delete-share')?.addEventListener('click',()=>{state.modal='delete';render();});
+      $('close-dialog')?.addEventListener('click',()=>{state.modal='';render();});
+      $('confirm-dialog')?.addEventListener('click',()=>{if(state.modal==='delete'){state.content='';state.file=null;state.ownerToken='';state.encryptionKey='';state.screen='deleted';state.modal='';render();}else if(state.pendingScreen==='create'){state.modal='';reset();}else{state.editedContent=state.content;state.format=state.createdFormat;state.expiry=state.createdExpiry;state.screen=state.pendingScreen||'viewer';state.modal='';state.pendingScreen='';render();}});
+      if (state.modal) { $('close-dialog')?.focus(); document.querySelector('.dialog-backdrop')?.addEventListener('keydown',(e)=>{if(e.key==='Escape'){state.modal='';render();}if(e.key==='Tab'){const buttons=[...document.querySelectorAll('.dialog button')];const index=buttons.indexOf(document.activeElement);if(e.shiftKey&&index===0){e.preventDefault();buttons.at(-1).focus();}else if(!e.shiftKey&&index===buttons.length-1){e.preventDefault();buttons[0].focus();}}}); }
+    }
+    render();
+  </script>
+</body>
+</html>

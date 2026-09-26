@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>uPaste · 设计方向</title>
+  <style>
+    :root { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: #1c2430; background: #f2f2ef; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: inherit; }
+    a:focus-visible { outline: 2px solid #37598d; outline-offset: 4px; }
+    .wrap { max-width: 1500px; margin: 0 auto; padding: clamp(24px, 4vw, 64px); }
+    .topline { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid #ced2d3; padding-bottom: 18px; }
+    .wordmark { font: 700 27px/1 Georgia, serif; letter-spacing: -.055em; }
+    .status { color: #52606b; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 56px 0 12px; font: 500 clamp(35px, 4vw, 56px)/1.12 Georgia, "Songti SC", serif; letter-spacing: -.04em; }
+    .intro { max-width: 74ch; color: #46515b; line-height: 1.7; margin: 0 0 42px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: stretch; }
+    .card { display: flex; flex-direction: column; min-width: 0; border: 1px solid #cdd2d3; background: #fff; }
+    .card.b { background: #151b20; color: #edf3f4; border-color: #35434b; }
+    .card-head { padding: 24px 24px 18px; min-height: 176px; }
+    .tag { font: 700 13px/1 Consolas, monospace; color: #2c54a4; }
+    .b .tag { color: #58d5e5; }
+    .c .tag { color: #bf4d36; }
+    h2 { font: 500 28px/1.2 Georgia, "Songti SC", serif; margin: 13px 0 12px; }
+    .card p { color: #59656b; line-height: 1.6; font-size: 14px; margin: 0; }
+    .b p { color: #b6c4c9; }
+    .images { order: 2; display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 8px; padding: 8px; background: #e8eae8; border-top: 1px solid #d8dddc; border-bottom: 1px solid #d8dddc; }
+    .b .images { background: #202c31; border-color: #35434b; }
+    .images img { display: block; width: 100%; height: 230px; object-fit: cover; object-position: top left; border: 1px solid #ced2d3; }
+    .images img.mobile { object-fit: cover; object-position: top center; }
+    .b .images img { border-color: #31414a; }
+    .card-bottom { order: 1; padding: 0 24px 24px; }
+    .open { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 17px; border: 1px solid currentColor; text-decoration: none; font-size: 14px; font-weight: 650; }
+    .open:hover { background: #e9edf1; }
+    .b .open:hover { background: #273942; }
+    .note { margin: 34px 0 0; color: #5c666a; font-size: 13px; line-height: 1.65; }
+    @media (max-width: 1050px) { .grid { grid-template-columns: 1fr; } .card-head { min-height: 0; } .images { grid-template-columns: minmax(0, 1fr) 140px; } .images img { height: 280px; } }
+    @media (max-width: 600px) { .wrap { padding: 18px; } h1 { margin-top: 40px; } .images { grid-template-columns: minmax(0, 1fr) 100px; } .images img { height: 176px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="topline"><span class="wordmark">uPaste</span><span class="status">Design exploration · needs review</span></header>
+    <main>
+      <h1>三种分享工作方式</h1>
+      <p class="intro">三个原型使用同一组产品能力，区别在于内容输入、分享设置和结果交接如何组织。每个方向都提供中文与 English 切换；点击原型可操作文本、文件及结果流程。</p>
+      <div class="grid">
+        <article class="card a">
+          <div class="card-head"><span class="tag">A / FOCUS</span><h2>内容画布</h2><p>打开即输入。分享设置紧邻画布底部，内容和创建动作处于同一视线范围。</p></div>
+          <div class="images"><img src="screenshots/a-desktop.png" alt="内容画布的桌面创建界面"><img class="mobile" src="screenshots/a-mobile.png" alt="内容画布的手机创建界面"></div>
+          <div class="card-bottom"><a class="open" href="variant-a.html">打开可交互原型 →</a></div>
+        </article>
+        <article class="card b">
+          <div class="card-head"><span class="tag">B / CONSOLE</span><h2>交付控制台</h2><p>桌面将内容和交付参数并列；手机保留独立设置段落，并在创建区显示当前选择。</p></div>
+          <div class="images"><img src="screenshots/b-desktop.png" alt="交付控制台的桌面创建界面"><img class="mobile" src="screenshots/b-mobile.png" alt="交付控制台的手机创建界面"></div>
+          <div class="card-bottom"><a class="open" href="variant-b.html">打开可交互原型 →</a></div>
+        </article>
+        <article class="card c">
+          <div class="card-head"><span class="tag">C / SEQUENCE</span><h2>分步交接</h2><p>把内容、分享设置和结果明确分段；每一步只呈现当前决定与下一步动作。</p></div>
+          <div class="images"><img src="screenshots/c-desktop.png" alt="分步交接的桌面创建界面"><img class="mobile" src="screenshots/c-mobile.png" alt="分步交接的手机创建界面"></div>
+          <div class="card-bottom"><a class="open" href="variant-c.html">打开可交互原型 →</a></div>
+        </article>
+      </div>
+      <p class="note">这些页面是设计原型，创建与管理动作使用无效的合成链接和令牌。生产前端仍保持现状；选定方向后将补齐公开模式、管理员和异常状态，再进入单独的实现阶段。</p>
+    </main>
+  </div>
+</body>
+</html>

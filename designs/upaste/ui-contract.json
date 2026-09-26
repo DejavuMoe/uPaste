@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 2,
+  "project": {
+    "name": "uPaste",
+    "slug": "upaste",
+    "surfaceType": "web-app"
+  },
+  "content": {
+    "defaultProfile": "operational-strict",
+    "inventory": "content-inventory.json",
+    "approvedCopySources": []
+  },
+  "designSources": "design-sources.json",
+  "surfaces": [
+    {
+      "id": "focus-canvas",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "variant-a.html",
+        "assetPath": "variant-a.html",
+        "files": ["variant-a.html", "variant-a.css", "variant-a.jsx"],
+        "states": ["create-text", "create-file", "created", "viewer", "manage", "discard-dialog", "delete-dialog"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/, /s/:id, /manage/:id",
+        "files": ["web/src/features/create/CreatePage.tsx", "web/src/features/create/CreationSuccess.tsx", "web/src/features/share/ShareRoute.tsx", "web/src/features/manage/ManageRoute.tsx"],
+        "interfaces": ["POST /api/v1/shares", "GET /api/v1/shares/:id", "PATCH /api/v1/shares/:id", "DELETE /api/v1/shares/:id"],
+        "tests": ["web/src/features/create/CreatePage.test.tsx", "web/e2e/management.spec.ts"]
+      },
+      "status": "prototype"
+    },
+    {
+      "id": "dispatch-console",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "variant-b.html",
+        "assetPath": "variant-b.html",
+        "files": ["variant-b.html"],
+        "states": ["create-text", "create-file", "created", "viewer", "manage", "discard-dialog", "delete-dialog"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/, /s/:id, /manage/:id",
+        "files": ["web/src/features/create/CreatePage.tsx", "web/src/features/create/CreationSuccess.tsx", "web/src/features/share/ShareRoute.tsx", "web/src/features/manage/ManageRoute.tsx"],
+        "interfaces": ["POST /api/v1/shares", "GET /api/v1/shares/:id", "PATCH /api/v1/shares/:id", "DELETE /api/v1/shares/:id"],
+        "tests": ["web/e2e/management.spec.ts", "web/e2e/visual-qa.spec.ts"]
+      },
+      "status": "prototype"
+    },
+    {
+      "id": "guided-handoff",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "variant-c.html",
+        "assetPath": "variant-c.html",
+        "files": ["variant-c.html"],
+        "states": ["content", "share-settings", "created", "viewer", "manage"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/, /s/:id, /manage/:id",
+        "files": ["web/src/features/create/CreatePage.tsx", "web/src/features/create/CreationSuccess.tsx", "web/src/features/share/ShareRoute.tsx", "web/src/features/manage/ManageRoute.tsx"],
+        "interfaces": ["POST /api/v1/shares", "GET /api/v1/shares/:id", "PATCH /api/v1/shares/:id", "DELETE /api/v1/shares/:id"],
+        "tests": ["web/e2e/management.spec.ts", "web/e2e/visual-qa.spec.ts"]
+      },
+      "status": "prototype"
+    },
+    {
+      "id": "single-composer-v2",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "prototype-v2.html",
+        "assetPath": "prototype-v2.html",
+        "files": ["prototype-v2.html", "prototype-v2.css", "prototype-v2.js"],
+        "states": ["create-empty", "create-filled", "file-selected", "encrypted-choice", "created", "viewer-preview", "manage-preview", "discard-dialog", "delete-dialog"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/, /s/:id, /manage/:id",
+        "files": ["web/src/features/create/CreatePage.tsx", "web/src/features/create/CreationSuccess.tsx", "web/src/features/share/ShareRoute.tsx", "web/src/features/manage/ManageRoute.tsx"],
+        "interfaces": ["POST /api/v1/shares", "GET /api/v1/shares/:id", "PATCH /api/v1/shares/:id", "DELETE /api/v1/shares/:id"],
+        "tests": ["web/src/features/create/CreatePage.test.tsx", "web/e2e/management.spec.ts", "web/e2e/visual-qa.spec.ts"]
+      },
+      "status": "approved"
+    }
+  ]
+}
