@@ -1,12 +1,28 @@
 # uPaste interface exploration
 
-Status: **changes requested** for directions A, B and C. The user rejected all three on 2026-09-26. They remain as historical artifacts and must not be treated as implementation candidates. The current production interface and API remain the functional baseline. The three earlier uncommitted create-draft guard edits are preserved separately.
+Status: **V3 needs review**. Directions A, B and C were rejected on 2026-09-26 and remain historical artifacts. V2 creation and credential handoff were approved, implemented and pushed as `fe7a5dd` and `1dfb045`. V3 extends that direction without changing production code.
 
-The rejection identifies a shared problem: generated concept images dictated three ornamental page silhouettes around essentially the same empty form. The next direction must be judged with realistic filled content and the link/token handoff, with no ornamental rail, settings dashboard, or creation wizard.
+The rejection identified a shared problem: generated concept images dictated ornamental page silhouettes around the same empty form. V2 established the content-first direction; this iteration checks the remaining product workflows against that visual language.
 
-The user rejected the current frontend prototype and asked for a full redesign using the project-level `prototype-first-ui` workflow. The user specified **中文 / English switching** for the new interface. These explorations use the same real Share model and synthetic, invalid `.invalid` links and management tokens. [Current capabilities](../../docs/ui/capabilities.md) and [source roles](design-sources.json) define their evidence boundary.
+The user specified **中文 / English switching**. These explorations use the real Share capability model and synthetic, invalid `.invalid` links and tokens. [Current capabilities](../../docs/ui/capabilities.md) and [source roles](design-sources.json) define their evidence boundary.
 
-## Active revision — one composer
+## V3 review — reading, control and conditional deployments
+
+V3 is **design-only and needs review**. Its three design assets extend the approved V2 type, spacing and restrained control hierarchy. They are local simulations; no Share API, file origin, challenge service, or admin API is called. Cross-page links open fixed review fixtures rather than carrying typed prototype content. The mock Raw action opens a generated `text/plain` tab and the mock file action downloads synthetic bytes.
+
+| Surface | Review the ordinary task | Review constraints and failures |
+|---|---|---|
+| Recipient and owner | [Markdown reading](prototype-v3.html?screen=read&kind=markdown), [file reading](prototype-v3.html?screen=read&kind=file), [management token entry](prototype-v3.html?screen=manage&kind=plain&token=missing) | [Source wrapping](prototype-v3.html?screen=read&kind=source), [missing decryption key](prototype-v3.html?screen=read&kind=encrypted&state=missing-key), [owner without key](prototype-v3.html?screen=manage&kind=encrypted&key=missing&token=present), [public retention limit](prototype-v3.html?screen=manage&kind=encrypted&key=missing&token=present&public=1) |
+| Public creation | [Public Text creation](prototype-v3-public.html?demo=public), [private deployment contrast](prototype-v3-public.html?demo=private) | [Expired challenge](prototype-v3-public.html?demo=public&challenge=expired), [configuration failure](prototype-v3-public.html?demo=public&config=error), [submission failure](prototype-v3-public.html?demo=public&submit=once-error) |
+| Superadmin, when enabled | [Token entry](prototype-v3-admin.html), [metadata overview](prototype-v3-admin.html?state=dashboard) | [Share detail](prototype-v3-admin.html?state=detail), [partial bulk failure](prototype-v3-admin.html?state=partial), [unavailable state](prototype-v3-admin.html?state=unavailable) |
+
+The viewer keeps content first. Standard Text supports Copy and Raw; Source supports wrapping; Markdown has rendered/source views; File has metadata and a download action without inline preview. Encrypted Text needs the complete read-link fragment, and its key is never shown in the prototype DOM. Management begins at the token gate after a reload or direct entry. Without a valid decryption fragment, the token holder can change expiry or delete but cannot edit encrypted content. Public retention is finite and limited from Share creation time. The Superadmin preview is available only in its configured deployment; an actual disabled server returns 404 at `/admin`, rather than serving this prototype's unavailable panel.
+
+The public prototype uses a simple local verification control to demonstrate widget states; it is not Cap or Turnstile. Its visible configuration-failure retry and submission block are proposed UI behavior: the current production config provider starts from private defaults and does not expose this dedicated screen. Admin empty/error guidance and cleanup count are likewise reviewable proposals, not claims about the current page.
+
+Browser QA exercised 57 V3 states from 320–1440px across English/Chinese, light/dark, creation/result, reading, management, public challenge, admin overview and errors. The repository retains three aggregated rendered-DOM captures and 24 representative screenshots; detailed per-state captures were kept as local QA artifacts outside the repository. The three prototypes remain independent HTML entry points for review; V2's approved creation prototype remains intact. Approval of these surfaces has **not** been recorded, so production implementation is outside this iteration.
+
+## Approved V2 — one composer
 
 **Approved by the user on 2026-09-26 for the creation and one-time credential handoff slice.** Viewer, management, public governance and Superadmin surfaces remain outside this prototype approval.
 
@@ -16,7 +32,7 @@ V2 is one editor flow. It removes the ornamental rail, inspector, wizard, displa
 
 V2 was authored directly in HTML/CSS/JavaScript from evidenced uPaste jobs. The three generated concept images below are excluded as V2 composition references. The [filled desktop](screenshots/v2-filled-desktop-zh.png), [empty mobile](screenshots/v2-empty-mobile.png), [file mobile](screenshots/v2-file-mobile.png) and [result mobile](screenshots/v2-result-mobile.png) captures show content density and the credential handoff. Normal creation, file selection, language switching and the synthetic encrypted result were exercised in a browser at 1440 × 900, 390 × 844 and 360 × 640.
 
-This is a **creation and handoff visual revision**, not a complete V1 prototype. Its viewer and management surfaces are lightweight previews; full Markdown rendering/source switching, Standard-only Raw, direct management token entry, public challenge/retention and Superadmin remain to be designed after this direction is reviewed. It uses invalid `.invalid` links and a nonfunctional sample token, with no API requests or cryptography. The native `datetime-local` control uses the browser's locale for its internal date format, which may differ from the UI language selection.
+This approved slice covers creation and handoff. Its viewer and management surfaces are lightweight previews; V3 above expands those flows. V2 uses invalid `.invalid` links and a nonfunctional sample token, with no API requests or cryptography. The native `datetime-local` control uses the browser's locale for its internal date format, which may differ from the UI language selection.
 
 ## Rejected directions retained for comparison
 
@@ -50,4 +66,4 @@ The concepts are not approved specifications. Intentional changes in the rendere
 
 ## Review and next gate
 
-Directions A, B and C are rejected historical versions. V2's creation and handoff direction is approved. The next design-only slice should complete public-mode challenge and retention, viewer and management errors, and the conditional Superadmin surface. The project skill requires a separate design-only approval commit before production implementation of the approved slice.
+Directions A, B and C are rejected historical versions. V2's creation and handoff direction is approved and implemented. V3 is ready for review; the project skill requires an explicit design approval and a separate design-only approval commit before any V3 production implementation.

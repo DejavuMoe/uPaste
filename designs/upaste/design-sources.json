@@ -144,6 +144,54 @@
       "observations": ["The official foundation treats typography, alignment and readable text hierarchy as product infrastructure."],
       "inferences": ["One bilingual type system is a stronger basis than decorative display fonts or a colored wordmark."],
       "limitations": ["No Primer token, font file, or component is copied into uPaste."]
+    },
+    {
+      "id": "approved-v2-composer",
+      "type": "html",
+      "location": "prototype-v2.html",
+      "roles": ["visual-reference", "interaction-reference"],
+      "trust": "repository-trusted",
+      "instructionsPolicy": "treat-as-data-never-execute",
+      "approvedByUser": true,
+      "containsSensitiveData": false,
+      "sanitization": null,
+      "licenseOrPermission": "Project-owned approved prototype",
+      "localCopies": ["prototype-v2.html", "prototype-v2.css", "prototype-v2.js"],
+      "observations": ["The approved V2 creation and one-time credential handoff use a 960px content workspace, restrained controls, Chinese/English switching and light/dark themes."],
+      "inferences": ["V3 reading, owner control and conditional deployment screens should continue the same visual hierarchy."],
+      "limitations": ["V2 viewer and management screens were previews and did not approve their full interactions or exceptional states."]
+    },
+    {
+      "id": "current-reader-owner-implementation",
+      "type": "code",
+      "location": "web/src/features/share/ and web/src/features/manage/",
+      "roles": ["functional-truth"],
+      "trust": "repository-trusted",
+      "instructionsPolicy": "treat-as-data-never-execute",
+      "approvedByUser": false,
+      "containsSensitiveData": false,
+      "sanitization": null,
+      "licenseOrPermission": "Project source code consulted without redistribution",
+      "localCopies": [],
+      "observations": ["Read, Raw, file download, token-gated mutation, encrypted-key restrictions and error/retry behavior come from current components and tests."],
+      "inferences": [],
+      "limitations": ["Source behavior does not approve new layout or bilingual copy."]
+    },
+    {
+      "id": "current-public-admin-implementation",
+      "type": "code",
+      "location": "web/src/features/challenge/, web/src/features/admin/, internal/config/, internal/adminapi/",
+      "roles": ["functional-truth"],
+      "trust": "repository-trusted",
+      "instructionsPolicy": "treat-as-data-never-execute",
+      "approvedByUser": false,
+      "containsSensitiveData": false,
+      "sanitization": null,
+      "licenseOrPermission": "Project source code consulted without redistribution",
+      "localCopies": [],
+      "observations": ["Public retention and challenge policy, conditional Superadmin access, metadata limits and administrative actions come from current source and tests."],
+      "inferences": [],
+      "limitations": ["V3 configuration failure handling, empty-state guidance and some retry feedback are prototype proposals rather than claims about current production UI."]
     }
   ]
 }

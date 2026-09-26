@@ -1,0 +1,73 @@
+.brand { text-decoration: none; }
+.v3-workspace { min-height: calc(100vh - 140px); }
+.page-top { display: flex; align-items: start; justify-content: space-between; gap: 22px; }
+.page-top #page-heading { margin-bottom: 8px; }
+.new-link { margin-top: 5px; color: var(--muted); font-size: 13px; text-underline-offset: 3px; white-space: nowrap; }
+.new-link:hover { color: var(--ink); }
+.surface-meta { margin: 0 0 25px; color: var(--muted); font-size: 13px; }
+.read-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.toolbar-end { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.read-toolbar .quiet-button { min-height: 36px; padding-inline: 11px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; }
+.view-switch { display: flex; align-items: center; gap: 4px; }
+.view-switch button { min-height: 36px; padding: 0 13px; border: 0; background: transparent; color: var(--muted); font-size: 13px; }
+.view-switch button[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--ink); font-weight: 630; }
+.reading-panel { min-height: 320px; padding: 25px 0 36px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }
+.reading-panel pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reading-panel.source-content { background: var(--editor); padding-inline: 20px; font: 14px/1.7 "Cascadia Code", Consolas, "PingFang SC", monospace; overflow-x: auto; }
+.reading-panel.source-content pre { font: inherit; white-space: pre; overflow-wrap: normal; min-width: max-content; }
+.reading-panel.source-content.is-wrapped pre { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.reading-panel.markdown-source { background: var(--editor); padding-inline: 20px; font: 14px/1.7 "Cascadia Code", Consolas, "PingFang SC", monospace; overflow-x: auto; }
+.reading-panel.markdown-source pre { font: inherit; white-space: pre-wrap; }
+.reading-panel.markdown-rendered h2 { margin: 0 0 18px; font-size: 26px; font-weight: 620; letter-spacing: -.035em; line-height: 1.25; }
+.reading-panel.markdown-rendered h3 { margin: 24px 0 8px; font-size: 17px; font-weight: 630; }
+.reading-panel.markdown-rendered p { margin: 0 0 14px; }
+.reading-panel.markdown-rendered ul { margin: 0 0 16px; padding-left: 23px; }
+.reading-panel.markdown-rendered code { font: 13px/1.6 "Cascadia Code", Consolas, monospace; }
+.reading-panel.markdown-rendered pre { max-width: 100%; margin: 14px 0; padding: 17px; background: var(--editor); overflow-x: auto; white-space: pre; }
+.reading-panel.markdown-rendered table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; }
+.reading-panel.markdown-rendered th, .reading-panel.markdown-rendered td { padding: 8px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+.reading-panel.markdown-rendered a { color: var(--focus); text-underline-offset: 3px; }
+.reading-panel.markdown-rendered .image-link { display: inline-block; padding: 4px 0; }
+.inline-status { min-height: 20px; margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+.file-document { padding: 26px 0 31px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.file-document strong { display: block; max-width: 100%; margin: 0 0 22px; overflow-wrap: anywhere; font-size: 21px; font-weight: 620; }
+.file-document dl { display: flex; flex-wrap: wrap; gap: 13px 36px; margin: 0 0 24px; }
+.file-document dl div { min-width: 90px; }
+.file-document dt { color: var(--muted); font-size: 12px; }
+.file-document dd { margin: 3px 0 0; font-size: 14px; }
+.file-document .primary-button { min-width: 150px; }
+.state-panel { max-width: 680px; min-height: 230px; padding: 31px 0; border-top: 1px solid var(--line); }
+.state-panel h2 { margin: 0 0 8px; font-size: 20px; font-weight: 630; letter-spacing: -.025em; }
+.state-panel p { margin: 0 0 24px; color: var(--muted); line-height: 1.65; }
+.state-panel .quiet-button { display: inline-flex; align-items: center; text-decoration: none; }
+.token-gate { max-width: 610px; padding: 25px 0 35px; border-top: 1px solid var(--line); }
+.token-gate label { font-weight: 620; }
+.token-gate p { margin: 8px 0 18px; color: var(--muted); font-size: 14px; }
+.token-input-row { display: flex; gap: 9px; }
+.token-input-row input { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 2px; background: var(--surface); color: var(--ink); font: 13px "Cascadia Code", Consolas, monospace; }
+.manage-text-wrap { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--editor); }
+.manage-text-wrap .manage-editor { display: block; width: 100%; min-height: 290px; padding: 20px 18px; border: 0; background: transparent; font-size: 16px; line-height: 1.7; }
+.manage-size { display: block; padding: 0 18px 12px; color: var(--muted); font: 12px "Cascadia Code", Consolas, monospace; }
+.manage-file { margin: 0; }
+.manage-controls { display: grid; grid-template-columns: 176px 176px; gap: 23px; justify-content: start; padding-top: 20px; }
+.manage-note { max-width: 68ch; margin: 15px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.form-message { margin: 14px 0 0; font-size: 13px; }
+.form-message.error { color: var(--danger); }
+.manage-submit { display: flex; justify-content: flex-end; margin-top: 18px; }
+.manage-submit .primary-button { min-width: 150px; }
+.manage-actions { justify-content: space-between; margin-top: 47px; }
+
+@media (max-width: 700px) {
+  .page-top { gap: 12px; }
+  .read-toolbar { flex-wrap: wrap; }
+  .toolbar-end { margin-left: 0; justify-content: flex-start; }
+  .reading-panel { min-height: 240px; padding-top: 20px; font-size: 15px; }
+  .reading-panel.markdown-rendered h2 { font-size: 22px; }
+  .manage-controls { grid-template-columns: repeat(2, minmax(0, 176px)); gap: 15px; }
+  .manage-submit .primary-button { width: 100%; }
+}
+@media (max-width: 370px) {
+  .token-input-row { flex-wrap: wrap; }
+  .token-input-row input, .token-input-row button { width: 100%; }
+  .read-toolbar .quiet-button { padding-inline: 9px; }
+}

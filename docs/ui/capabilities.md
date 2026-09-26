@@ -1,10 +1,9 @@
 # Current UI capabilities and states
 
-This inventory describes the Windows working tree, including the current
-uncommitted create-page draft-navigation guard. It is based on production source,
-API handlers, and tests; this audit did not run the app or browser tests. Existing
-design specifications describe earlier intent and are not used as proof of
-current behavior.
+This inventory describes the current Windows source tree. It is based on
+production source, API handlers, and tests; the cited tests are coverage evidence,
+not a fresh test run for this inventory. Existing design specifications describe
+earlier intent and are not used as proof of current behavior.
 
 ## Users and primary jobs
 
@@ -24,7 +23,7 @@ current behavior.
 
 | Surface ID | Route/window/device | Purpose | Primary actions | Evidence/source files |
 |---|---|---|---|---|
-| `shell` | All SPA routes | Brand/home link and system/light/dark theme selection | Go home; change theme | `web/src/app/App.tsx`, `web/src/components/AppHeader.tsx`, `web/src/app/theme.tsx` |
+| `shell` | All SPA routes | Brand/home link and system/light/dark theme selection; Chinese/English switch on `/` | Go home; change theme; switch creation language | `web/src/app/App.tsx`, `web/src/components/AppHeader.tsx`, `web/src/app/{theme,locale}.tsx` |
 | `create` | `/` | Create Text or File Share | Select tab, format/privacy/expiration, enter text or choose/drop one file, submit | `web/src/features/create/{CreatePage,TextCreateForm,FileCreateForm}.tsx` |
 | `created` | `/`, after successful POST | Deliver the read link and owner capability once | Copy link/token, reveal token, open or manage Share, start new Share | `web/src/features/create/CreationSuccess.tsx` |
 | `read` | `/s/:id` | Read Text/Markdown or File metadata | Copy text, switch Markdown view, wrap source lines, open standard-text Raw, download File | `web/src/features/share/{ShareRoute,TextViewer,MarkdownViewer,FileViewer}.tsx` |
@@ -62,7 +61,7 @@ There is no public listing/search or account-based ownership. Evidence:
 | Runtime config | `GET /api/v1/config` supplies deployment mode, optional retention/challenge, admin availability | Provider tracks `loading`; forms do not wait for it | Initial private defaults until response | Provider tracks `error`; initial failure keeps private defaults, later reload failure keeps prior config; no dedicated error view | — | No dedicated offline state | `reload()` exists in context but no visible control calls it | Browser fetch (`web/src/app/config.tsx`) |
 | Text create | Format/privacy/expiry, editor and byte count | `Creating…`; editor/options disabled | Empty text disables submit | Inline alert; 429 wait text; draft retained | >1 MiB, invalid expiry, pending POST, or unsolved public challenge | Public Cap/Turnstile gate; no dedicated offline screen | Request aborts on unmount; failed submit can be retried; no visible cancel control | Browser Web Crypto for Encrypted Text (`TextCreateForm.tsx`, `ChallengeGate.tsx`) |
 | File create | Choose/drop one File, remove it, set expiry | `Preparing…`/`Uploading…` | No file: drop zone, submit disabled | Zero/oversize file rejected; upload error alert and selection retained | Missing/invalid file, invalid expiry, pending upload, or unsolved challenge | Same public challenge; no dedicated offline screen | XHR byte/percent progress when measurable; unmount aborts; no visible upload cancel | File input and drag/drop (`FileCreateForm.tsx`, `api.ts`) |
-| Creation result | Read link and masked owner token | — | — | Copy failure falls back to browser prompt | — | Token cannot be recovered from the screen after leaving/reload | Copy feedback; Open/Manage/New actions | Clipboard API with fallback (`CreationSuccess.tsx`, `CopyButton.tsx`) |
+| Creation result | Read link and masked owner token | — | — | Copy failure shows a status and focuses/selects the relevant input for manual copying; token is revealed on token-copy failure | — | Token cannot be recovered from the screen after leaving/reload | Copy feedback; Open/Manage/New actions | Clipboard API with legacy copy fallback (`CreationSuccess.tsx`, `CopyButton.tsx`) |
 | Read Share | Text, rendered/source Markdown, or File metadata; no automatic File-byte fetch | `Loading share…`; encrypted text then `Decrypting…` | No separate blank-share state | 404, 410, 429, network/server, missing/wrong key have distinct screens | Raw absent for encrypted; unsafe File URL shows unavailable | Complete fragment required to decrypt; network error has retry | 429/network/server error offers Try again; fetch aborts on unmount | File download leaves SPA for separate origin (`ShareRoute.tsx`, `ShareErrorState.tsx`, viewers) |
 | Manage Share | Owner token gate, editable Text or File metadata with expiry/delete | `Loading share…`; `Saving…`/`Deleting…` | Empty Text edit cannot save | 404/410/server terminal states; save errors in status; 401 forgets token but keeps draft | Save blocked unless changed and valid; File/content-without-key editing absent | Bearer token required for mutation; no dedicated offline screen | Delete and dirty navigation have confirmation dialogs; failed save can retry | Ctrl/Cmd+Enter saves from Text editor (`ManageRoute.tsx`) |
 | Superadmin | Summary, filters, exact ID, paged table and detail | Initial config default shows unavailable; when enabled, login form shows during session check; `busy` state; detail dialog shows loading | Empty list renders table with no rows or empty-state text | Login/list/detail/mutation errors shown; partial bulk failure reported | Disabled deployment shows unavailable page; sign-in disables empty token | Session cookie and CSRF required; no dedicated offline screen | Confirm/cancel for delete, bulk delete, cleanup; Load more | Browser-only admin SPA (`AdminPage.tsx`, `adminApi.ts`, `config.tsx`) |
@@ -84,17 +83,17 @@ There is no public listing/search or account-based ownership. Evidence:
 ## Interaction and accessibility behavior
 
 - Keyboard/focus: Text/File tabs support Left/Right arrows, Home, End, and
-  roving `tabIndex`. Format and Privacy are button-based radio groups with click
-  handlers; no arrow-key handler is present. The management Text editor handles
-  Ctrl/Cmd+Enter. Dialogs use a portal, `aria-modal`, focus containment, Escape,
-  background `inert`/`aria-hidden`, and focus restoration. Evidence:
-  `web/src/components/{Tabs,Dialog}.tsx`, `TextCreateForm.tsx`, `ManageRoute.tsx`,
-  `web/src/components/Dialog.test.tsx`.
+  roving `tabIndex`. Creation uses a native Format select and Privacy radio
+  inputs; the creation success heading receives focus. The management Text editor
+  handles Ctrl/Cmd+Enter. Dialogs use a portal, `aria-modal`, focus containment,
+  Escape, background `inert`/`aria-hidden`, and focus restoration. Evidence:
+  `web/src/components/{Tabs,Dialog}.tsx`, `CreatePage.tsx`,
+  `TextCreateForm.tsx`, `ManageRoute.tsx`, `web/src/components/Dialog.test.tsx`.
 - Draft navigation: Text and File create forms stay mounted while tabs switch.
-  A nonempty text draft or selected file triggers `beforeunload` protection and,
-  in the current uncommitted working tree, a React Router leave dialog for
-  internal navigation/Back. Keep editing preserves both drafts and the selected
-  tab. Manage likewise blocks leaving when content/expiry is dirty. Evidence:
+  A nonempty text draft or selected file triggers `beforeunload` protection and
+  a React Router leave dialog for internal navigation/Back. Keep editing
+  preserves both drafts and the selected tab. Manage likewise blocks leaving
+  when content/expiry is dirty. Evidence:
   `web/src/features/create/CreatePage.tsx`, `CreatePage.test.tsx`,
   `web/e2e/management.spec.ts`, `ManageRoute.tsx`.
 - Pointer/touch/drag/drop: File creation accepts a file picker or drag/drop;
@@ -112,9 +111,11 @@ There is no public listing/search or account-based ownership. Evidence:
   status/alert roles. File metadata uses a definition list. Evidence: feature
   components above and `web/src/features/challenge/ChallengeGate.tsx`.
 - Reduced motion/high contrast/localization: CSS honors
-  `prefers-reduced-motion`; theme supports system/light/dark. No explicit
-  `forced-colors` rules or localization mechanism was found in `web/src`;
-  user-visible strings are English. Actual high-contrast behavior is unknown.
+  `prefers-reduced-motion`; theme supports system/light/dark. The creation route
+  and result have Chinese/English copy selected in memory; other routes remain
+  English. No explicit `forced-colors` rules were found. Actual high-contrast
+  behavior is unknown. Evidence: `web/src/app/locale.tsx`,
+  `web/src/features/create/createCopy.ts`, `web/src/app/App.tsx`.
 
 ## Platform, viewport, and runtime constraints
 
@@ -123,11 +124,14 @@ There is no public listing/search or account-based ownership. Evidence:
   File listeners are distinct; defaults are loopback `127.0.0.1:8080` and
   `127.0.0.1:8081`. Evidence: `web/package.json`, `cmd/upaste/main.go`,
   `internal/webapp/webapp.go`, `internal/config/config.go`.
-- Source CSS has a 320px minimum page width, a 1140px main content maximum,
-  layout changes at 768px and 480px, and coarse-pointer/reduced-motion rules.
+- Shared CSS has a 320px minimum page width, a 1140px main content maximum,
+  and layout changes at 768px and 480px. The creation route has a 960px maximum
+  workspace width and additional layout changes at 700px, 480px, and 370px.
+  Coarse-pointer and reduced-motion rules are present.
   The existing Playwright visual suite names 360, 390, 768, 1024, and 1440px in
   both themes; the suite was not rerun in this audit. Evidence:
-  `web/src/style.css`, `web/e2e/visual-qa.spec.ts`.
+  `web/src/style.css`, `web/src/features/create/createPage.css`,
+  `web/e2e/visual-qa.spec.ts`.
 - Public deployments require a configured challenge and finite retention;
   private deployment is the default. Public UI supports Cap or Cloudflare
   Turnstile. Expiration and challenge limits come from `/api/v1/config`.
@@ -138,9 +142,10 @@ There is no public listing/search or account-based ownership. Evidence:
 
 - Domain terminology: Share, Text, File, Standard, Encrypted, Plain text,
   Source, Markdown, Expires, Management token, Superadmin. The code owns current
-  functional values; current English UI wording is not an approved redesign
-  copy contract. Evidence: `internal/domain/domain.go`, `web/src/app/types.ts`,
-  feature components.
+  functional values; creation copy is Chinese/English and other routes use
+  English. Current UI wording is not an approved redesign copy contract.
+  Evidence: `internal/domain/domain.go`, `web/src/app/types.ts`,
+  `web/src/features/create/createCopy.ts`, feature components.
 - Existing state/error semantics: expired, not found, missing/wrong decryption
   key, rate limit, network/server failure, invalid expiration/file size, pending
   upload/save/delete, and permission failure. Evidence: `ShareErrorState.tsx`,
@@ -152,10 +157,7 @@ There is no public listing/search or account-based ownership. Evidence:
 - No fresh runtime, accessibility-tree, browser, touch-device, zoom, or
   high-contrast check was performed for this inventory. Tests listed above are
   existing coverage, not a claim that they passed in this audit.
-- The three create-page draft guard edits are uncommitted at audit time;
-  committed CI results for an earlier SHA do not validate this working tree.
 - Deployment mode, challenge provider, admin availability, real content, and
   network conditions on any target installation are unknown.
-- Focus destination after creation success and behavior on browsers without
-  required Web Crypto features have not been verified here; no explicit focus
-  move or compatibility fallback is present in the inspected components.
+- Behavior on browsers without required Web Crypto features has not been
+  verified here; no compatibility fallback is present in the inspected components.

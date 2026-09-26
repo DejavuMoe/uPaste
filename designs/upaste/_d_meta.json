@@ -72,8 +72,50 @@
           }
         }
       ]
+    },
+    "V3 Read and Manage": {
+      "versions": [
+        {
+          "path": "prototype-v3.html",
+          "createdAt": "2026-09-26T05:22:10.501Z",
+          "status": "needs-review",
+          "subtitle": "Recipient reading and owner control states",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    },
+    "V3 Public Creation": {
+      "versions": [
+        {
+          "path": "prototype-v3-public.html",
+          "createdAt": "2026-09-26T05:22:11.461Z",
+          "status": "needs-review",
+          "subtitle": "Conditional public retention and verification",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
+    },
+    "V3 Superadmin": {
+      "versions": [
+        {
+          "path": "prototype-v3-admin.html",
+          "createdAt": "2026-09-26T05:22:12.837Z",
+          "status": "needs-review",
+          "subtitle": "Conditional administration and metadata governance",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        }
+      ]
     }
   },
   "createdAt": "2026-09-26T03:41:57.248Z",
-  "updatedAt": "2026-09-26T04:28:30.681Z"
+  "updatedAt": "2026-09-26T05:22:12.838Z"
 }

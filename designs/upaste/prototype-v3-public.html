@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>新建分享 · uPaste</title>
+  <link rel="stylesheet" href="prototype-v3-public.css?v=3">
+  <script src="prototype-v3-public.js?v=3" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <span class="brand">uPaste</span>
+      <div class="header-tools">
+        <div class="language" role="group" aria-label="语言 / Language">
+          <button id="language-zh" type="button" aria-pressed="true">中文</button>
+          <span aria-hidden="true">/</span>
+          <button id="language-en" type="button" aria-pressed="false">EN</button>
+        </div>
+        <label class="visually-hidden" for="theme" data-i18n="theme">外观</label>
+        <select id="theme" aria-label="外观">
+          <option value="system" data-i18n="system">跟随系统</option>
+          <option value="light" data-i18n="light">浅色</option>
+          <option value="dark" data-i18n="dark">深色</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <h1 id="page-heading" tabindex="-1" data-i18n="newShare">新建分享</h1>
+    <section id="create-screen" class="screen" aria-labelledby="page-heading">
+      <div id="config-banner" class="config-banner" role="status" aria-live="polite">
+        <span id="config-status">正在读取分享设置…</span>
+        <button id="config-retry" type="button" class="text-button" data-i18n="tryAgain" hidden>重试</button>
+      </div>
+
+      <div class="mode-row">
+        <div class="mode-tabs" role="tablist" aria-label="内容类型">
+          <button id="mode-text" type="button" role="tab" aria-selected="true" data-i18n="text">文本</button>
+          <button id="mode-file" type="button" role="tab" aria-selected="false" data-i18n="file">文件</button>
+        </div>
+        <span id="content-size" class="size" aria-live="polite">0 B / 1 MiB</span>
+      </div>
+
+      <div id="text-panel" class="editor-area" role="tabpanel" aria-labelledby="mode-text">
+        <label class="visually-hidden" for="text-content" data-i18n="content">内容</label>
+        <textarea id="text-content" spellcheck="false" placeholder="粘贴或输入内容…" aria-describedby="content-size"></textarea>
+      </div>
+
+      <div id="file-panel" class="file-area" role="tabpanel" aria-labelledby="mode-file" hidden>
+        <div id="file-empty" class="file-empty">
+          <p data-i18n="dropFile">拖入一个文件</p>
+          <button id="choose-file" type="button" class="quiet-button" data-i18n="chooseFile">选择文件</button>
+          <span data-i18n="fileLimit">单个文件，最大 64 MiB</span>
+        </div>
+        <div id="file-selected" class="file-selected" hidden>
+          <div><strong id="file-name"></strong><span id="file-size"></span></div>
+          <button id="remove-file" type="button" class="quiet-button" data-i18n="remove">移除</button>
+        </div>
+        <input id="file-input" class="visually-hidden" type="file" aria-label="选择文件">
+      </div>
+
+      <div id="create-controls" class="create-controls">
+        <div id="format-control" class="setting">
+          <label for="format" data-i18n="format">格式</label>
+          <select id="format">
+            <option value="PLAIN" data-i18n="plain">纯文本</option>
+            <option value="SOURCE" data-i18n="source">源码</option>
+            <option value="MARKDOWN">Markdown</option>
+          </select>
+        </div>
+        <fieldset id="privacy-control" class="setting privacy-setting">
+          <legend data-i18n="privacy">隐私</legend>
+          <label><input type="radio" name="privacy" value="STANDARD" checked><span data-i18n="standard">标准</span></label>
+          <label><input type="radio" name="privacy" value="ENCRYPTED"><span data-i18n="encrypted">加密</span></label>
+        </fieldset>
+        <div class="setting expiry-setting">
+          <label for="expiry" data-i18n="expires">到期</label>
+          <select id="expiry" disabled><option value="" data-i18n="loadingSettings">正在加载…</option></select>
+        </div>
+      </div>
+
+      <div id="custom-expiry-wrap" class="custom-expiry" hidden>
+        <label for="custom-expiry" data-i18n="customDate">自定义到期时间</label>
+        <input id="custom-expiry" type="datetime-local" aria-describedby="expiry-help expiry-error">
+      </div>
+      <p id="expiry-help" class="note" hidden></p>
+      <p id="expiry-error" class="error" role="alert" hidden></p>
+      <p id="encrypted-note" class="note" hidden data-i18n="encryptedNote">内容在此浏览器中加密。持有完整链接的人可以阅读；服务器无法恢复丢失的解密密钥。</p>
+
+      <div id="challenge-gate" class="challenge-gate" role="group" aria-label="人机验证" hidden>
+        <div class="challenge-row">
+          <div id="challenge-mark" class="challenge-mark" aria-hidden="true"></div>
+          <div class="challenge-copy">
+            <strong data-i18n="humanVerification">人机验证</strong>
+            <p id="challenge-status" role="status" aria-live="polite"></p>
+          </div>
+          <button id="challenge-verify" type="button" class="quiet-button" data-i18n="verify" hidden>完成验证</button>
+          <button id="challenge-retry" type="button" class="quiet-button" data-i18n="tryAgain" hidden>重试</button>
+        </div>
+      </div>
+
+      <p id="create-error" class="error" role="alert" hidden></p>
+      <div class="submit-row"><button id="create" type="button" class="primary-button" disabled data-i18n="create">创建分享</button></div>
+    </section>
+
+    <section id="result-screen" class="screen" aria-labelledby="page-heading" hidden>
+      <div class="result-meta" id="result-meta"></div>
+      <div class="handoff-row">
+        <div class="handoff-label"><label for="share-link" data-i18n="shareLink">分享链接</label></div>
+        <div class="handoff-value"><input id="share-link" type="text" readonly><button id="copy-link" type="button" class="quiet-button" data-i18n="copyLink">复制链接</button></div>
+      </div>
+      <div class="handoff-row token-row">
+        <div class="handoff-label"><label for="owner-token" data-i18n="managementToken">管理令牌</label><p data-i18n="tokenNote">请立即保存。令牌只显示一次；修改或删除分享时需要使用，uPaste 无法恢复它。</p></div>
+        <div class="handoff-value"><input id="owner-token" type="text" readonly><button id="toggle-token" type="button" class="quiet-button" data-i18n="reveal">显示</button><button id="copy-token" type="button" class="primary-button" data-i18n="copyToken">复制令牌</button></div>
+      </div>
+      <p id="copy-status" class="status" role="status" aria-live="polite"></p>
+      <div class="result-actions"><a id="open-share" class="quiet-button" href="prototype-v3.html?screen=read&amp;kind=plain" data-i18n="openShare">查看分享</a><a id="manage-share" class="quiet-button" href="prototype-v3.html?screen=manage&amp;kind=plain&amp;token=present" data-i18n="manageShare">管理分享</a><button id="new-share" type="button" class="text-button" data-i18n="newShare">新建分享</button></div>
+    </section>
+  </main>
+</body>
+</html>

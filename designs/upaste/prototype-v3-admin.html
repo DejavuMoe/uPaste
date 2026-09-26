@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>管理 · uPaste</title>
+  <link rel="stylesheet" href="prototype-v3-admin.css?v=3">
+  <script src="prototype-v3-admin.js?v=3" defer></script>
+</head>
+<body>
+  <header class="site-header" id="site-header">
+    <div class="header-inner">
+      <span class="brand">uPaste</span>
+      <div class="header-tools">
+        <div class="language" role="group" aria-label="语言 / Language">
+          <button id="language-zh" type="button" aria-pressed="true">中文</button>
+          <span aria-hidden="true">/</span>
+          <button id="language-en" type="button" aria-pressed="false">EN</button>
+        </div>
+        <label class="visually-hidden" for="theme" data-i18n="theme">外观</label>
+        <select id="theme" aria-label="外观">
+          <option value="system" data-i18n="system">跟随系统</option>
+          <option value="light" data-i18n="light">浅色</option>
+          <option value="dark" data-i18n="dark">深色</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main class="workspace" id="main">
+    <h1 id="page-heading" tabindex="-1" data-i18n="heading">管理</h1>
+
+    <section id="unavailable-screen" class="state-screen" data-screen-label="admin-unavailable" hidden>
+      <h2 data-i18n="unavailable">管理入口不可用</h2>
+    </section>
+
+    <section id="login-screen" class="state-screen login-screen" data-screen-label="admin-login">
+      <form id="login-form" novalidate>
+        <label for="admin-token" data-i18n="token">管理员令牌</label>
+        <input id="admin-token" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="up_a1_…">
+        <p id="login-error" class="error" role="alert" hidden></p>
+        <button id="sign-in" class="primary-button" type="submit" disabled data-i18n="signIn">登录</button>
+      </form>
+    </section>
+
+    <section id="dashboard-screen" data-screen-label="admin-dashboard" hidden>
+      <div class="dashboard-actions">
+        <button id="cleanup" class="quiet-button" type="button" data-i18n="cleanup">清理到期分享</button>
+        <button id="logout" class="text-button" type="button" data-i18n="logout">退出</button>
+      </div>
+
+      <section class="summary" aria-labelledby="summary-heading">
+        <h2 id="summary-heading" data-i18n="summary">概览</h2>
+        <dl class="summary-grid">
+          <div><dt data-i18n="active">有效</dt><dd id="summary-active">0</dd></div>
+          <div><dt data-i18n="expired">已到期</dt><dd id="summary-expired">0</dd></div>
+          <div><dt data-i18n="text">文本</dt><dd id="summary-text">0</dd></div>
+          <div><dt data-i18n="file">文件</dt><dd id="summary-file">0</dd></div>
+          <div><dt data-i18n="encrypted">加密</dt><dd id="summary-encrypted">0</dd></div>
+          <div><dt data-i18n="fileBytes">文件占用</dt><dd id="summary-file-bytes">0 B</dd></div>
+        </dl>
+      </section>
+
+      <section class="shares-section" aria-labelledby="shares-heading">
+        <div class="section-heading">
+          <h2 id="shares-heading" data-i18n="shares">分享</h2>
+          <span id="result-count" class="result-count" aria-live="polite"></span>
+        </div>
+        <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+
+        <div class="filter-grid" role="group" aria-label="分享筛选">
+          <label><span data-i18n="type">类型</span><select id="filter-kind"><option value="" data-i18n="allTypes">全部类型</option><option value="TEXT" data-i18n="text">文本</option><option value="FILE" data-i18n="file">文件</option></select></label>
+          <label><span data-i18n="privacy">隐私</span><select id="filter-privacy"><option value="" data-i18n="allPrivacy">全部隐私</option><option value="STANDARD" data-i18n="standard">标准</option><option value="ENCRYPTED" data-i18n="encrypted">加密</option></select></label>
+          <label><span data-i18n="state">状态</span><select id="filter-lifecycle"><option value="" data-i18n="allStates">全部状态</option><option value="active" data-i18n="active">有效</option><option value="expired" data-i18n="expired">已到期</option></select></label>
+          <label><span data-i18n="sort">排序</span><select id="filter-sort"><option value="newest" data-i18n="newest">最新创建</option><option value="oldest" data-i18n="oldest">最早创建</option></select></label>
+        </div>
+
+        <form id="lookup-form" class="lookup-row" novalidate>
+          <label for="exact-id" data-i18n="exactId">精确分享 ID</label>
+          <div class="lookup-controls">
+            <input id="exact-id" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text" placeholder="22 字符">
+            <button class="quiet-button" type="submit" data-i18n="find">查找</button>
+            <button id="clear-lookup" class="text-button" type="button" data-i18n="clear" hidden>清除</button>
+          </div>
+          <p id="lookup-error" class="error" role="alert" hidden></p>
+        </form>
+
+        <div id="list-bar" class="list-bar" hidden>
+          <span id="selection-count" class="selection-count" aria-live="polite"></span>
+          <button id="bulk-delete" class="quiet-button danger-button" type="button" hidden></button>
+        </div>
+
+        <div id="list-loading" class="list-state" role="status" data-i18n="loading" hidden>正在加载分享…</div>
+        <div id="list-error" class="list-state" hidden>
+          <p class="error" role="alert" data-i18n="loadError">无法加载分享。</p>
+          <button id="retry" class="quiet-button" type="button" data-i18n="retry">重试</button>
+        </div>
+        <div id="list-empty" class="list-state" hidden>
+          <p data-i18n="empty">没有符合条件的分享。</p>
+          <button id="clear-filters" class="quiet-button" type="button" data-i18n="clearFilters">清除筛选</button>
+        </div>
+
+        <div id="table-wrap" class="table-wrap">
+          <table class="share-table">
+            <thead><tr><th scope="col"><span class="visually-hidden" data-i18n="select">选择</span></th><th scope="col" data-i18n="id">ID</th><th scope="col" data-i18n="type">类型</th><th scope="col" data-i18n="privacy">隐私</th><th scope="col" data-i18n="created">创建</th><th scope="col" data-i18n="expires">到期</th><th scope="col" data-i18n="state">状态</th><th scope="col" data-i18n="size">大小</th><th scope="col"><span class="visually-hidden" data-i18n="actions">操作</span></th></tr></thead>
+            <tbody id="shares-body"></tbody>
+          </table>
+        </div>
+        <div class="pagination"><button id="load-more" class="quiet-button" type="button" data-i18n="loadMore" hidden>加载更多</button></div>
+      </section>
+    </section>
+  </main>
+
+  <div id="dialog-backdrop" class="dialog-backdrop" hidden>
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+      <p id="dialog-error" class="error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="dialog-cancel" class="quiet-button" type="button"></button>
+        <button id="dialog-confirm" class="primary-button" type="button"></button>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -83,6 +83,60 @@
         "tests": ["web/src/features/create/CreatePage.test.tsx", "web/e2e/management.spec.ts", "web/e2e/visual-qa.spec.ts"]
       },
       "status": "approved"
+    },
+    {
+      "id": "read-manage-v3",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "prototype-v3.html",
+        "assetPath": "prototype-v3.html",
+        "files": ["prototype-v3.html", "prototype-v3.css", "prototype-v3.js", "prototype-v2.css"],
+        "states": ["plain", "source-wrap", "markdown-rendered", "markdown-source", "file", "encrypted", "loading", "decrypting", "not-found", "expired", "rate-limit", "network-error", "missing-key", "wrong-key", "token-gate", "editable-text", "file-management", "expiry-only", "public-expiry-limit", "save-error", "dirty-dialog", "delete-dialog"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/s/:id, /manage/:id",
+        "files": ["web/src/features/share/ShareRoute.tsx", "web/src/features/share/TextViewer.tsx", "web/src/features/share/MarkdownViewer.tsx", "web/src/features/share/FileViewer.tsx", "web/src/features/share/ShareErrorState.tsx", "web/src/features/manage/ManageRoute.tsx"],
+        "interfaces": ["GET /api/v1/shares/:id", "GET /raw/:id", "GET /f/:id", "PATCH /api/v1/shares/:id", "DELETE /api/v1/shares/:id"],
+        "tests": ["web/src/features/share/ShareRoute.test.tsx", "web/src/features/manage/ManageRoute.test.tsx", "web/e2e/encrypted-management.spec.ts", "web/e2e/file-management.spec.ts"]
+      },
+      "status": "needs-review"
+    },
+    {
+      "id": "public-create-v3",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "prototype-v3-public.html",
+        "assetPath": "prototype-v3-public.html",
+        "files": ["prototype-v3-public.html", "prototype-v3-public.css", "prototype-v3-public.js"],
+        "states": ["private", "config-loading", "config-error", "public-ready", "challenge-loading", "challenge-ready", "challenge-verified", "challenge-expired", "challenge-error", "text-create", "file-create", "submit-error", "created"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/",
+        "files": ["web/src/features/create/TextCreateForm.tsx", "web/src/features/create/FileCreateForm.tsx", "web/src/components/ExpirationField.tsx", "web/src/features/challenge/ChallengeGate.tsx"],
+        "interfaces": ["GET /api/v1/config", "POST /api/v1/shares"],
+        "tests": ["web/e2e-public/public.spec.ts", "web/e2e-cap/cap.spec.ts"]
+      },
+      "status": "needs-review"
+    },
+    {
+      "id": "superadmin-v3",
+      "contentProfile": "operational-strict",
+      "prototype": {
+        "entry": "prototype-v3-admin.html",
+        "assetPath": "prototype-v3-admin.html",
+        "files": ["prototype-v3-admin.html", "prototype-v3-admin.css", "prototype-v3-admin.js"],
+        "states": ["unavailable", "login", "login-error", "dashboard", "loading", "empty", "list-error", "exact-id", "detail", "detail-error", "bulk-partial-failure", "delete-confirmation", "expired-cleanup", "session-expired"],
+        "stableIds": []
+      },
+      "production": {
+        "routeOrWindow": "/admin when enabled",
+        "files": ["web/src/features/admin/AdminPage.tsx", "web/src/app/adminApi.ts"],
+        "interfaces": ["GET /api/v1/admin/session", "POST /api/v1/admin/session", "DELETE /api/v1/admin/session", "GET /api/v1/admin/summary", "GET /api/v1/admin/shares", "GET /api/v1/admin/shares/:id", "DELETE /api/v1/admin/shares/:id", "POST /api/v1/admin/shares/bulk-delete", "POST /api/v1/admin/cleanup/expired"],
+        "tests": ["web/src/features/admin/AdminPage.test.tsx", "web/e2e-cap/cap.spec.ts"]
+      },
+      "status": "needs-review"
     }
   ]
 }
