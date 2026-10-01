@@ -1,5 +1,10 @@
 # uPaste
 
+> [!WARNING]
+> **uPaste is deprecated and this repository is archived.** Its text and file sharing now lives in [Sani](https://github.com/DejavuMoe/sani), a self-hosted link shortener: share a text (plain or code) or a file at `/p/…`, with expiry, visit limits and statistics, and with file bytes served from a domain of their own. See [Texts and files](https://github.com/DejavuMoe/sani/blob/main/docs/en/guide/usage.md) in Sani's docs.
+>
+> Sani only lets its owner create shares; uPaste's anonymous public mode, encrypted texts and Markdown rendering were not carried over. uPaste never had a release. The rest of this README describes its last state and is kept for reference.
+
 uPaste is a self-hosted application for sharing text and files. Security, reliability, and simple single-server operation are its priorities.
 
 ## Current status
